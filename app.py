@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 # Load local .env file if present
 load_dotenv()
 
+def get_config(key, default_value=""):
+    if key in st.secrets:
+        return st.secrets[key]
+    return os.getenv(key, default_value)
 # ============================================================================
 # 1. Configuration & Environment Variables
 # ============================================================================
@@ -20,10 +24,8 @@ st.set_page_config(
 )
 
 # Read from .env, Streamlit Cloud secrets, or fallback defaults
-PARQUET_FILE = os.getenv("PARQUET_FILE_PATH", "primes.parquet")
-
-DEFAULT_URL = "https://github.com/YOUR_USERNAME/YOUR_REPO/releases/download/v1.0/primes.parquet"
-RELEASE_URL = os.getenv("RELEASE_URL", DEFAULT_URL)
+PARQUET_FILE = get_config("PARQUET_FILE_PATH")
+RELEASE_URL = get_config("RELEASE_URL")
 
 # ============================================================================
 # 2. Auto-Download Helper for Large Files (500 MB+)
