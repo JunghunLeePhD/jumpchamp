@@ -9,7 +9,6 @@ use std::fs::File;
 use std::sync::Arc;
 use std::time::Instant;
 
-/// Small sieve to find base primes up to sqrt(limit)
 fn find_small_primes(limit: usize) -> Vec<usize> {
     if limit < 2 {
         return vec![];
