@@ -116,7 +116,7 @@ def query_prime_gaps(
     gaps2_file: str,
     params: FilterParams,
 ) -> pd.DataFrame:
-    """Queries 2-step gap frequency distribution by prime index range [min_idx, max_idx].
+    """Queries 2-step gap (k=2) frequency distribution by prime index range [min_idx, max_idx].
     
     Zero windowing, zero subtractions: direct single-column row offset slice & GROUP BY.
     """
@@ -125,12 +125,12 @@ def query_prime_gaps(
 
     query = f"""
     WITH sliced AS (
-        SELECT delta2 FROM '{gaps2_file}'
+        SELECT deltak FROM '{gaps2_file}'
         LIMIT {limit_count} OFFSET {offset}
     )
-    SELECT delta2 AS diff, COUNT(*) AS frequency
+    SELECT deltak AS diff, COUNT(*) AS frequency
     FROM sliced
-    GROUP BY delta2
+    GROUP BY deltak
     ORDER BY frequency DESC
     LIMIT {params.top_n};
     """

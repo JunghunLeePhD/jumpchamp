@@ -1,5 +1,5 @@
 // ============================================================================
-// Gap Database Storage — single-column gaps.parquet (gap: u16)
+// Generalized k-Step Gap Database Storage — single-column gaps_k.parquet (deltak: u16)
 // ============================================================================
 
 use arrow_array::{RecordBatch, UInt16Array};
@@ -10,22 +10,22 @@ use parquet::file::properties::WriterProperties;
 use std::fs::File;
 use std::sync::Arc;
 
-/// A write-only sink that stores single-column `gap: u16` values in Parquet format.
+/// A write-only sink that stores single-column `deltak: u16` values in Parquet format.
 ///
 /// **Single-column architecture**:
 /// Row position 0..N-1 implicitly represents prime index n = 1..N.
-/// By storing only the `gap` column, on-disk file size is reduced from 267 MB down to ~95 MB
-/// (~60% smaller than primes.parquet) while enabling direct row-offset range querying.
+/// Storing pre-computed Δ_k(n) = p_{n+k} - p_n directly allows analytical engines
+/// to compute gap distributions for step size k with zero windowing and zero subtractions.
 pub struct GapsSink {
     schema: Arc<Schema>,
     writer: ArrowWriter<File>,
 }
 
 impl GapsSink {
-    /// Creates a new Parquet file at `path` ready for writing gap values.
+    /// Creates a new Parquet file at `path` ready for writing k-step gap values.
     pub fn create(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let schema = Arc::new(Schema::new(vec![
-            Field::new("gap", DataType::UInt16, false),
+            Field::new("deltak", DataType::UInt16, false),
         ]));
 
         let props = WriterProperties::builder()
@@ -38,7 +38,7 @@ impl GapsSink {
         Ok(Self { schema, writer })
     }
 
-    /// Writes a slice of `u16` gap values to the Parquet file.
+    /// Writes a slice of `u16` k-step gap values to the Parquet file.
     pub fn write_batch(&mut self, gaps: &[u16]) -> Result<(), Box<dyn std::error::Error>> {
         let batch = RecordBatch::try_new(
             self.schema.clone(),

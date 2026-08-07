@@ -100,12 +100,19 @@ Compression Ratio:  1.31 bytes/prime
 ----------------------------------------
 ```
 
-### **2. Building the 2-Step Gap Database (`build_gaps2`)**
+### **2. Building Pre-Computed Gap Databases (`build_gaps`)**
 
-Pre-computes 2-step prime gaps ($\Delta_2(n) = p_{n+2} - p_n$) as a **single-column `delta2: u16` file** in `gaps2.parquet` (~90 MB). Enables the Web UI to execute $k=2$ queries with zero windowing and zero subtractions.
+Pre-computes $k$-step prime gaps ($\Delta_k(n) = p_{n+k} - p_n$) as a **single-column `deltak: u16` Parquet file** (`gaps{k}.parquet`, ~90 MB).
 
 ```bash
-cargo run --release --bin build_gaps2
+# Default (k=2): Builds gaps2.parquet
+cargo run --release --bin build_gaps
+
+# Custom step size k=3: Builds gaps3.parquet
+cargo run --release --bin build_gaps -- 3
+
+# Custom step size k=6 with custom input/output paths:
+cargo run --release --bin build_gaps -- 6 primes.parquet custom.parquet
 ```
 
 ### **3. Web UI Dashboard (`app.py`)**
