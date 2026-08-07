@@ -1,4 +1,5 @@
 import os
+import threading
 import urllib.request
 from dataclasses import dataclass
 
@@ -6,7 +7,10 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
+
+_db_lock = threading.Lock()
 
 # ============================================================================
 # 1. Domain Types & Configuration Layer
@@ -137,7 +141,8 @@ def query_prime_gaps(
     LIMIT {params.top_n};
     """
 
-    return _conn.sql(query).df()
+    with _db_lock:
+        return _conn.sql(query).df()
 
 def process_gap_dataframe(df: pd.DataFrame, sort_by: str) -> pd.DataFrame:
     """Calculates percentages and applies selected sorting order."""
@@ -163,8 +168,8 @@ def inject_sticky_navbar_css() -> None:
     st.markdown(
         """
         <style>
-        /* Pin top control row to top of page during vertical scrolling */
-        div[data-testid="stHorizontalBlock"] {
+        /* Pin top control row / form to top of page during vertical scrolling */
+        div[data-testid="stHorizontalBlock"], div[data-testid="stForm"] {
             position: sticky;
             top: 2.875rem;
             z-index: 999;
@@ -177,6 +182,78 @@ def inject_sticky_navbar_css() -> None:
         """,
         unsafe_allow_html=True
     )
+
+def lock_controls_css() -> None:
+    """Injects CSS to freeze pointer events and dim filter controls during database query and rendering."""
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stHorizontalBlock"] {
+            pointer-events: none !important;
+            opacity: 0.55 !important;
+            filter: grayscale(30%);
+            transition: opacity 0.15s ease-in-out;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+def unlock_controls_css() -> None:
+    """Injects CSS to restore pointer events and full opacity on filter controls after rendering."""
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stHorizontalBlock"] {
+            pointer-events: auto !important;
+            opacity: 1.0 !important;
+            filter: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+def inject_instant_freeze_js() -> None:
+    """Injects client-side JavaScript to lock top filter controls in 0ms on the first user input event."""
+    js_code = """
+    <script>
+    (function() {
+        const parentDoc = window.parent.document;
+
+        function freeze() {
+            const bar = parentDoc.querySelector('div[data-testid="stHorizontalBlock"]');
+            if (bar) {
+                bar.style.pointerEvents = 'none';
+                bar.style.opacity = '0.5';
+                bar.style.filter = 'grayscale(40%)';
+                bar.style.transition = 'opacity 0.1s ease-in-out';
+            }
+        }
+
+        function attach() {
+            const bar = parentDoc.querySelector('div[data-testid="stHorizontalBlock"]');
+            if (!bar) return;
+
+            // Reset styles if previously frozen
+            bar.style.pointerEvents = 'auto';
+            bar.style.opacity = '1.0';
+            bar.style.filter = 'none';
+
+            const targets = bar.querySelectorAll('input, select, button, div[role="slider"], div[data-baseweb="select"]');
+            targets.forEach(el => {
+                el.addEventListener('pointerdown', freeze, { capture: true, once: true });
+                el.addEventListener('change', freeze, { capture: true, once: true });
+                el.addEventListener('input', freeze, { capture: true, once: true });
+                el.addEventListener('keydown', freeze, { capture: true, once: true });
+            });
+        }
+
+        setTimeout(attach, 150);
+    })();
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
 
 def render_math_definitions() -> None:
     """Renders LaTeX mathematical explanations for 2-step prime gap size."""
@@ -191,8 +268,8 @@ def render_math_definitions() -> None:
             """
         )
 
-def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
-    """Renders sticky top control bar: Sort Order -> Top N -> Min Index (n) -> Max Index (m) -> Slider."""
+def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) -> FilterParams:
+    """Renders sticky top control bar without an Apply button, disabling controls during execution."""
     default_max = min(meta.max_idx, 1_000_000)
 
     # Initialize state variables
@@ -222,6 +299,7 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             "Sort Order",
             options=["Frequency", "Gap Size"],
             index=0,
+            disabled=is_processing,
             help="'Frequency' sorts descending by count; 'Gap Size' orders numerically along the X-axis."
         )
 
@@ -231,7 +309,8 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             min_value=5,
             max_value=50,
             value=20,
-            step=5
+            step=5,
+            disabled=is_processing
         )
 
     with col3:
@@ -241,7 +320,8 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             max_value=meta.max_idx - 1,
             key="min_idx_val",
             on_change=sync_from_numbers,
-            step=100_000
+            step=100_000,
+            disabled=is_processing
         )
 
     with col4:
@@ -251,7 +331,8 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             max_value=meta.max_idx,
             key="max_idx_val",
             on_change=sync_from_numbers,
-            step=100_000
+            step=100_000,
+            disabled=is_processing
         )
 
     with col5:
@@ -260,7 +341,8 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             min_value=meta.min_idx,
             max_value=meta.max_idx,
             key="slider_bounds",
-            on_change=sync_from_slider
+            on_change=sync_from_slider,
+            disabled=is_processing
         )
 
     return FilterParams(
@@ -312,8 +394,9 @@ def render_data_table(df: pd.DataFrame) -> None:
 def main():
     st.set_page_config(page_title="2-Step Prime Gap Explorer", page_icon="🦀", layout="wide")
 
-    # 1. Inject Sticky Navbar CSS
+    # 1. Inject Sticky Navbar & Instant Client-Side Freeze JS
     inject_sticky_navbar_css()
+    inject_instant_freeze_js()
 
     # 2. Config & Data File Verification
     config = load_config()
@@ -325,20 +408,29 @@ def main():
 
     # 4. Mathematical Definitions & Sticky Control Bar
     render_math_definitions()
-    params = render_top_filter_bar(metadata)
+    
+    is_processing = st.session_state.get("is_processing", False)
+    params = render_top_filter_bar(metadata, is_processing=is_processing)
 
-    with st.spinner("Executing DuckDB query..."):
-        raw_df = query_prime_gaps(conn, config.gaps2_file, params)
+    # Freeze frontend control interaction during DuckDB query & chart rendering
+    lock_controls_css()
+    st.session_state["is_processing"] = True
+    try:
+        with st.spinner("Executing DuckDB query & rendering visualisations..."):
+            raw_df = query_prime_gaps(conn, config.gaps2_file, params)
 
-    if raw_df.empty:
-        st.warning("No prime pairs found in the selected index range.")
-        return
+            if raw_df.empty:
+                st.warning("No prime pairs found in the selected index range.")
+                return
 
-    df = process_gap_dataframe(raw_df, params.sort_by)
+            df = process_gap_dataframe(raw_df, params.sort_by)
 
-    # 6. Vertical Layout: Chart followed by Data Table
-    render_gap_distribution_chart(df)
-    render_data_table(df)
+            # 6. Vertical Layout: Chart followed by Data Table
+            render_gap_distribution_chart(df)
+            render_data_table(df)
+    finally:
+        st.session_state["is_processing"] = False
+        unlock_controls_css()
 
 if __name__ == "__main__":
     main()
