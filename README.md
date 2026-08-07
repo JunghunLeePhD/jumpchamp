@@ -26,14 +26,38 @@ Built with a functional programming architecture, cache-aligned multi-threading 
 ```text
 prime_pipeline/
 ├── .devcontainer/
-│   └── devcontainer.json    # VS Code Dev Container settings (Clippy, LLDB, Rust-Analyzer)
+│   └── devcontainer.json        # VS Code Dev Container settings
 ├── src/
-│   ├── main.rs              # Prime generator & Parquet writer
+│   ├── lib.rs                   # Library root — declares all domain layers
+│   ├── config.rs                # Config struct & CLI arg parsing (generator)
+│   ├── main.rs                  # Generator binary — thin orchestration shell
+│   ├── sieve/
+│   │   ├── mod.rs               # Re-exports basic, parallel, stream
+│   │   ├── basic.rs             # small_primes, sieve_segment (pure, sequential)
+│   │   ├── parallel.rs          # sieve_range_parallel (Rayon, L1-cache-aligned)
+│   │   └── stream.rs            # stream_prime_blocks_range (lazy block iterator)
+│   ├── storage/
+│   │   ├── mod.rs               # Re-exports parquet
+│   │   └── parquet.rs           # ParquetPrimeSink, get_existing_max_prime, copy_existing_parquet
+│   ├── analysis/
+│   │   ├── mod.rs               # Re-exports gaps, report
+│   │   ├── gaps.rs              # stream_primes, apply_interval, k_step_gaps, count_frequencies
+│   │   └── report.rs            # format_report (pure text formatter)
 │   └── bin/
-│       └── analyze.rs       # Stream analyzer for prime gap distributions (p_{n+k} - p_n)
-├── .gitignore               # Ignores /target and *.parquet artifacts
-└── Cargo.toml               # Dependencies (Rayon, Arrow, Parquet)
+│       └── analyze.rs           # Analyzer binary — thin orchestration shell
+├── app.py                       # Streamlit dashboard (DuckDB-backed, prime gap visualization)
+├── .gitignore                   # Ignores /target and *.parquet artifacts
+└── Cargo.toml                   # Dependencies (Rayon, Arrow, Parquet)
 ```
+
+Each domain layer is independently readable and testable:
+
+| Layer | Modules | Responsibility | External Deps |
+|-------|---------|---------------|---------------|
+| `sieve/` | `basic`, `parallel`, `stream` | Prime generation algorithms | `rayon` |
+| `storage/` | `parquet` | Parquet read/write sink | `arrow`, `parquet` crates |
+| `analysis/` | `gaps`, `report` | Gap analysis pipeline & formatting | `parquet` crate (reader) |
+| _(top-level)_ | `config` | CLI arg parsing for the generator | none |
 
 ## **🚀 Quick Start**
 
