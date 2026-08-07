@@ -1,87 +1,111 @@
 // ============================================================================
-// Execution Pipeline — Prime Generator Binary
+// Execution Pipeline — Gap Analyzer (default binary)
 // ============================================================================
 //
-// Thin orchestration shell. All algorithm and I/O logic lives in the library:
-//   primes::config          — Config struct & CLI parsing
-//   primes::sieve           — small_primes, stream_prime_blocks_range
-//   primes::storage         — ParquetPrimeSink, get_existing_max_prime, copy_existing_parquet
+// Usage:
+//   cargo run --release -- [k] [min_idx] [max_idx] [gaps_file]
+//
+// Auto-detects gaps.parquet (single-column fast path) and falls back to primes.parquet (slow path).
+//
+// Fast path  (gaps.parquet present — ~95 MB single-column file):
+//   stream_gaps → apply_offset_interval → k_step_gaps_from_gaps → count_frequencies
+//
+// Slow path  (primes.parquet only):
+//   stream_primes → apply_interval → k_step_gaps → count_frequencies
 
-use primes::{
-    config::Config,
-    sieve::{small_primes, stream_prime_blocks_range},
-    storage::{copy_existing_parquet, get_existing_max_prime, ParquetPrimeSink},
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use jumpchamp::analysis::{
+    apply_interval, apply_offset_interval, count_frequencies, format_report,
+    k_step_gaps, k_step_gaps_from_gaps, stream_gaps, stream_primes,
 };
-use std::{env, fs, time::Instant};
+use std::{env, fs::File, path::Path, time::Instant};
+
+// ============================================================================
+// Analyzer Configuration
+// ============================================================================
+
+#[derive(Debug, Clone)]
+struct AnalyzeConfig {
+    k: usize,
+    min_idx: u64,
+    max_idx: u64,
+    file_path: String,
+}
+
+impl AnalyzeConfig {
+    fn from_args(args: &[String]) -> Self {
+        Self {
+            k: args.get(1).and_then(|s| s.parse().ok()).unwrap_or(2),
+            min_idx: args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1),
+            max_idx: args.get(3).and_then(|s| s.parse().ok()).unwrap_or(u64::MAX),
+            file_path: args.get(4).cloned().unwrap_or_else(|| "primes.parquet".into()),
+        }
+    }
+
+    /// Derives the expected gaps database path: same directory as the primes file,
+    /// named `gaps.parquet`.
+    fn gaps_path(&self) -> String {
+        Path::new(&self.file_path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("gaps.parquet")
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let config = Config::from_args(&args);
-    let tmp_path = format!("{}.tmp", config.output_path);
+    let config = AnalyzeConfig::from_args(&args);
 
+    if config.k == 0 {
+        eprintln!("Error: Step size k must be >= 1");
+        std::process::exit(1);
+    }
+
+    let gaps_path = config.gaps_path();
+    let use_gaps  = Path::new(&gaps_path).exists();
+
+    println!("Analyzing prime gaps (p_{{n+{}}} - p_n)", config.k);
+    println!("Index Interval:  [n={}, m={}]", config.min_idx, config.max_idx);
+
+    let frequencies;
     let start_time = Instant::now();
-    let existing_max = get_existing_max_prime(&config.output_path);
 
-    // 1. Check if existing computation already covers the target limit
-    if let Some(max_p) = existing_max {
-        if (config.limit as u64) <= max_p {
-            println!(
-                "File '{}' already contains primes up to {} (>= requested {}). Nothing to do!",
-                config.output_path, max_p, config.limit
-            );
-            return Ok(());
-        }
-    }
+    if use_gaps {
+        // ── Fast path: stream single-column (gap: u16) by row offset ────────────
+        println!("Source:          {} (single-column gap database — fast path)\n", gaps_path);
 
-    let mut sink = ParquetPrimeSink::create(&tmp_path)?;
-    let mut total_primes = 0;
-    let start_val;
+        let file   = File::open(&gaps_path)?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
 
-    // 2. Handle Initial vs. Incremental Setup
-    if let Some(max_p) = existing_max {
-        println!(
-            "Found existing database up to {}. Resuming computation up to {}...",
-            max_p, config.limit
-        );
-        total_primes += copy_existing_parquet(&config.output_path, &mut sink)?;
-        start_val = (max_p + 1) as usize;
+        frequencies = count_frequencies(k_step_gaps_from_gaps(
+            apply_offset_interval(stream_gaps(reader), config.min_idx, config.max_idx),
+            config.k,
+        ));
     } else {
-        println!("Creating new prime database up to {}...", config.limit);
-        let sqrt_limit = (config.limit as f64).sqrt() as usize;
-        let base_primes = small_primes(sqrt_limit);
-        let base_u64: Vec<u64> = base_primes.iter().map(|&p| p as u64).collect();
+        // ── Slow path: derive gaps on the fly from primes.parquet ───────────────
+        println!("Source:          {} (prime database — slow path)\n", config.file_path);
+        println!("  Tip: run `cargo run --release --bin build_gaps` to build gaps.parquet");
+        println!("       for faster single-column gap queries.\n");
 
-        sink.write_batch(&base_u64)?;
-        total_primes += base_primes.len();
-        start_val = sqrt_limit + 1;
+        let file   = File::open(&config.file_path)?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+
+        frequencies = count_frequencies(k_step_gaps(
+            apply_interval(stream_primes(reader), config.min_idx, config.max_idx),
+            config.k,
+        ));
     }
 
-    // 3. Compute and append the new range
-    if start_val <= config.limit {
-        let sqrt_limit = (config.limit as f64).sqrt() as usize;
-        let base_primes = small_primes(sqrt_limit);
-
-        for block in stream_prime_blocks_range(start_val, config.limit, config.block_size, &base_primes) {
-            total_primes += block.len();
-            sink.write_batch(&block)?;
-        }
-    }
-
-    // 4. Finalize sink and atomically swap tmp → output
-    sink.finish()?;
-    fs::rename(&tmp_path, &config.output_path)?;
-
-    // 5. Output summary
     let duration = start_time.elapsed();
-    let file_size_bytes = fs::metadata(&config.output_path)?.len();
-    let bytes_per_prime = file_size_bytes as f64 / total_primes as f64;
 
-    println!("\n----------------------------------------");
-    println!("Total Primes in DB: {}", total_primes);
-    println!("Time Elapsed:       {:.2?}", duration);
-    println!("Parquet File Size:  {:.2} MB", file_size_bytes as f64 / 1_048_576.0);
-    println!("Compression Ratio:  {:.2} bytes/prime", bytes_per_prime);
-    println!("----------------------------------------");
+    print!("{}", format_report(&frequencies, 20));
+    println!("Time Elapsed: {:.2?}\n", duration);
 
     Ok(())
 }

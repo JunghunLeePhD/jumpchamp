@@ -1,8 +1,8 @@
 [package]
-name = "primes"
+name = "jumpchamp"
 version = "0.1.0"
 edition = "2021"
-default-run = "primes"
+default-run = "jumpchamp"   # cargo run -> analyzer (src/main.rs)
 
 [dependencies]
 rayon = "1.10"

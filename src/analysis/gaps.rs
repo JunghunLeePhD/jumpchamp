@@ -24,7 +24,7 @@ pub fn stream_primes(reader: ParquetRecordBatchReader) -> impl Iterator<Item = u
     })
 }
 
-/// Applies lazy bounds checking: stops reading when `p > max`, skips `p < min`.
+/// Applies lazy bounds checking on prime values: stops reading when `p > max`, skips `p < min`.
 pub fn apply_interval(
     primes: impl Iterator<Item = u64>,
     min: u64,
@@ -59,67 +59,60 @@ pub fn count_frequencies(stream: impl Iterator<Item = u64>) -> BTreeMap<u64, u64
 }
 
 // ============================================================================
-// Fast path — operates on pre-computed (prime, gap) pairs from gaps.parquet
+// Fast path — operates on single-column (gap: u16) from gaps.parquet
 // ============================================================================
 
-/// Converts a gaps.parquet reader into a lazy stream of `(prime, Δ_1(n))` pairs.
-pub fn stream_gap_pairs(reader: ParquetRecordBatchReader) -> impl Iterator<Item = (u64, u16)> {
+/// Converts a single-column gaps.parquet reader into a lazy stream of 16-bit gap values.
+pub fn stream_gaps(reader: ParquetRecordBatchReader) -> impl Iterator<Item = u16> {
     reader.filter_map(Result::ok).flat_map(|batch| {
-        let primes = batch
-            .column(0)
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .expect("Expected UInt64Array for prime column")
-            .clone();
         let gaps = batch
-            .column(1)
+            .column(0)
             .as_any()
             .downcast_ref::<UInt16Array>()
             .expect("Expected UInt16Array for gap column")
             .clone();
 
-        (0..primes.len())
-            .map(move |i| (primes.value(i), gaps.value(i)))
-            .collect::<Vec<_>>()
-            .into_iter()
+        (0..gaps.len()).map(move |i| gaps.value(i)).collect::<Vec<_>>().into_iter()
     })
 }
 
-/// Filters `(prime, gap)` pairs to `[min, max]` with early exit on the upper bound.
-pub fn apply_gap_interval(
-    pairs: impl Iterator<Item = (u64, u16)>,
-    min: u64,
-    max: u64,
-) -> impl Iterator<Item = (u64, u16)> {
-    pairs
-        .take_while(move |&(p, _)| p <= max) // Early exit when prime > max
-        .filter(move |&(p, _)| p >= min)     // Lower bound filter
+/// Applies 1-based index range bounds [min_idx, max_idx] using iterator skip and take.
+pub fn apply_offset_interval(
+    gaps: impl Iterator<Item = u16>,
+    min_idx: u64,
+    max_idx: u64,
+) -> impl Iterator<Item = u16> {
+    let skip_count = min_idx.saturating_sub(1) as usize;
+    let take_count = if max_idx >= min_idx {
+        (max_idx - min_idx + 1) as usize
+    } else {
+        0
+    };
+
+    gaps.skip(skip_count).take(take_count)
 }
 
-/// Computes k-step gaps from a stream of 1-step `(prime, gap)` pairs via a sliding sum.
+/// Computes k-step gaps from a stream of 1-step `u16` gaps via a sliding sum.
 ///
 /// Mathematical identity: Δ_k(n) = Δ_1(n) + Δ_1(n+1) + ... + Δ_1(n+k−1)
-///
-/// Results are identical to `k_step_gaps` applied to the equivalent prime stream.
-pub fn k_step_gaps_from_pairs(
-    pairs: impl Iterator<Item = (u64, u16)>,
+pub fn k_step_gaps_from_gaps(
+    gaps: impl Iterator<Item = u16>,
     k: usize,
 ) -> impl Iterator<Item = u64> {
     let mut window: VecDeque<u64> = VecDeque::with_capacity(k);
     let mut window_sum: u64 = 0;
 
-    pairs.filter_map(move |(_, gap)| {
+    gaps.filter_map(move |gap| {
         let g = gap as u64;
         window.push_back(g);
         window_sum += g;
 
         if window.len() == k {
-            // Window is full: emit the sum, then slide forward by removing the oldest gap
             let result = window_sum;
             window_sum -= window.pop_front().unwrap();
             Some(result)
         } else {
-            None // Window not yet full
+            None
         }
     })
 }

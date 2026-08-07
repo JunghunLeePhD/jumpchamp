@@ -15,20 +15,19 @@ from dotenv import load_dotenv
 
 @dataclass(frozen=True)
 class AppConfig:
-    parquet_file: str
-    gaps_file: str      # Pre-computed gap database (gaps.parquet); empty string if not configured
+    gaps_file: str
     release_url: str
 
 class FilterParams(NamedTuple):
     k: int
-    min_prime: int
-    max_prime: int
+    min_idx: int
+    max_idx: int
     top_n: int
     sort_by: str  # "Frequency" or "Gap Size"
 
 class DatasetMetadata(NamedTuple):
-    min_prime: int
-    max_prime: int
+    min_idx: int
+    max_idx: int
     total_count: int
 
 
@@ -47,11 +46,10 @@ def load_config() -> AppConfig:
         return default
 
     return AppConfig(
-        parquet_file=_get_val("PARQUET_FILE_PATH", "primes.parquet"),
         gaps_file=_get_val("GAPS_FILE_PATH", "gaps.parquet"),
         release_url=_get_val(
-            "RELEASE_URL",
-            "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/primes.parquet"
+            "GAPS_RELEASE_URL",
+            "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/gaps.parquet"
         )
     )
 
@@ -60,16 +58,13 @@ def load_config() -> AppConfig:
 # ============================================================================
 
 def ensure_dataset_exists(config: AppConfig) -> None:
-    """Validates existence and size of primes.parquet; downloads from release asset if missing/corrupt."""
-    file_path = config.parquet_file
-    
-    if os.path.exists(file_path):
-        if os.path.getsize(file_path) < 1_000_000:
-            os.remove(file_path)
-        else:
-            return
+    """Validates existence of gaps.parquet; downloads from release asset if missing/corrupt."""
+    gaps_path = config.gaps_file
 
-    st.info(f"📦 Dataset (`{file_path}`) not found locally. Fetching remote storage...")
+    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000:
+        return
+
+    st.info(f"📦 Gap database (`{gaps_path}`) not found locally. Fetching remote storage (~95 MB)...")
     progress_bar = st.progress(0.0)
     status_text = st.empty()
 
@@ -83,7 +78,7 @@ def ensure_dataset_exists(config: AppConfig) -> None:
             )
 
     try:
-        urllib.request.urlretrieve(config.release_url, file_path, reporthook=_download_callback)
+        urllib.request.urlretrieve(config.release_url, gaps_path, reporthook=_download_callback)
         progress_bar.empty()
         status_text.empty()
         st.success("✅ Download complete! Initializing database engine...")
@@ -91,9 +86,13 @@ def ensure_dataset_exists(config: AppConfig) -> None:
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        st.error(f"❌ Download failed from URL:\n`{config.release_url}`\n\nError: {e}")
+        if os.path.exists(gaps_path):
+            os.remove(gaps_path)
+        st.error(
+            f"❌ Gap database (`{gaps_path}`) not found locally and could not be fetched from remote storage.\n\n"
+            f"Please run `cargo run --release --bin build_gaps` to generate `{gaps_path}` locally.\n\n"
+            f"Error details: {e}"
+        )
         st.stop()
 
 # ============================================================================
@@ -108,70 +107,55 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
     return conn
 
 @st.cache_data(show_spinner=False)
-def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, file_path: str) -> DatasetMetadata:
-    meta = _conn.sql(f"""
-        SELECT MIN(prime), MAX(prime), COUNT(*) 
-        FROM '{file_path}'
-    """).fetchone()
-    return DatasetMetadata(min_prime=int(meta[0]), max_prime=int(meta[1]), total_count=int(meta[2]))
+def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_file: str) -> DatasetMetadata:
+    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*) FROM '{gaps_file}'").fetchone()
+    return DatasetMetadata(min_idx=int(meta[0]), max_idx=int(meta[1]), total_count=int(meta[2]))
 
 @st.cache_data(show_spinner=False)
 def query_prime_gaps(
     _conn: duckdb.DuckDBPyConnection,
-    file_path: str,
     gaps_file: str,
     params: FilterParams,
 ) -> pd.DataFrame:
-    """Queries gap frequency distribution. Uses gaps.parquet (fast) when available."""
-    use_gaps = bool(gaps_file) and os.path.exists(gaps_file)
+    """Queries gap frequency distribution by prime index range [min_idx, max_idx]."""
+    offset = params.min_idx - 1
+    limit_count = params.max_idx - params.min_idx + 1
 
-    if use_gaps and params.k == 1:
-        # ── Fast path, k=1: no window function needed — direct GROUP BY ─────────
+    if params.k == 1:
+        # ── Single-column fast path, k=1: direct row offset slice & GROUP BY ─────
         query = f"""
+        WITH sliced AS (
+            SELECT gap FROM '{gaps_file}'
+            LIMIT {limit_count} OFFSET {offset}
+        )
         SELECT gap AS diff, COUNT(*) AS frequency
-        FROM '{gaps_file}'
-        WHERE prime BETWEEN {params.min_prime} AND {params.max_prime}
+        FROM sliced
         GROUP BY gap
         ORDER BY frequency DESC
         LIMIT {params.top_n};
         """
-    elif use_gaps:
-        # ── Fast path, k>1: sliding window SUM over pre-computed 1-step gaps ────
-        # remaining = (total rows) − (1-indexed row number)
-        # Rows with remaining >= k−1 have a full k-element window ahead of them.
+    else:
+        # ── Single-column fast path, k>1: window sum over sliced gap stream ─────
+        window_limit = limit_count + params.k - 1
         query = f"""
-        WITH bounded AS (
+        WITH sliced AS (
+            SELECT gap, ROW_NUMBER() OVER () AS idx
+            FROM '{gaps_file}'
+            LIMIT {window_limit} OFFSET {offset}
+        ),
+        bounded AS (
             SELECT
-                prime,
+                idx,
                 SUM(gap) OVER (
-                    ORDER BY prime
+                    ORDER BY idx
                     ROWS BETWEEN CURRENT ROW AND {params.k - 1} FOLLOWING
                 ) AS diff,
-                COUNT(*) OVER () - ROW_NUMBER() OVER (ORDER BY prime) AS remaining
-            FROM '{gaps_file}'
-            WHERE prime BETWEEN {params.min_prime} AND {params.max_prime}
+                COUNT(*) OVER () - ROW_NUMBER() OVER (ORDER BY idx) AS remaining
+            FROM sliced
         )
         SELECT diff, COUNT(*) AS frequency
         FROM bounded
         WHERE remaining >= {params.k - 1}
-        GROUP BY diff
-        ORDER BY frequency DESC
-        LIMIT {params.top_n};
-        """
-    else:
-        # ── Slow path: compute gaps on the fly from primes.parquet ───────────────
-        query = f"""
-        WITH interval_primes AS (
-            SELECT prime FROM '{file_path}'
-            WHERE prime BETWEEN {params.min_prime} AND {params.max_prime}
-        ),
-        gaps AS (
-            SELECT LEAD(prime, {params.k}) OVER (ORDER BY prime) - prime AS diff
-            FROM interval_primes
-        )
-        SELECT diff, COUNT(*) AS frequency
-        FROM gaps
-        WHERE diff IS NOT NULL
         GROUP BY diff
         ORDER BY frequency DESC
         LIMIT {params.top_n};
@@ -229,32 +213,33 @@ def render_math_definitions() -> None:
               * When $k = 1$, we evaluate adjacent prime gaps: $p_{n+1} - p_n$.
               * When $k = 2$, we evaluate primes separated by one intervening prime: $p_{n+2} - p_n$.
             * **Gap Size ($\Delta$):** The arithmetic difference computed as:
-              $$\Delta_k(n) = p_{n+k} - p_n$$
+              $$\Delta_k(n) = p_{n+k} - p_n = \sum_{i=0}^{k-1} \Delta_1(n+i)$$
+            * **Prime Index ($n$):** Filters are applied to prime sequence numbers $n$ to $m$ ($p_n$ to $p_m$).
             """
         )
 
 def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
-    """Renders sticky top control bar: Sort Order -> Step Size (k) -> Top N Gaps -> Bounds."""
-    default_max = min(meta.max_prime, 1_000_000)
+    """Renders sticky top control bar: Step Size (k) -> Sort Order -> Top N -> Min Index (n) -> Max Index (m) -> Slider."""
+    default_max = min(meta.max_idx, 1_000_000)
 
     # Initialize state variables
-    if "min_prime_val" not in st.session_state:
-        st.session_state.min_prime_val = meta.min_prime
-    if "max_prime_val" not in st.session_state:
-        st.session_state.max_prime_val = default_max
+    if "min_idx_val" not in st.session_state:
+        st.session_state.min_idx_val = meta.min_idx
+    if "max_idx_val" not in st.session_state:
+        st.session_state.max_idx_val = default_max
     if "slider_bounds" not in st.session_state:
-        st.session_state.slider_bounds = (st.session_state.min_prime_val, st.session_state.max_prime_val)
+        st.session_state.slider_bounds = (st.session_state.min_idx_val, st.session_state.max_idx_val)
 
     # Sync callbacks
     def sync_from_slider():
-        st.session_state.min_prime_val = st.session_state.slider_bounds[0]
-        st.session_state.max_prime_val = st.session_state.slider_bounds[1]
+        st.session_state.min_idx_val = st.session_state.slider_bounds[0]
+        st.session_state.max_idx_val = st.session_state.slider_bounds[1]
 
     def sync_from_numbers():
-        min_v = max(meta.min_prime, min(st.session_state.min_prime_val, meta.max_prime - 1))
-        max_v = min(meta.max_prime, max(st.session_state.max_prime_val, min_v + 1))
-        st.session_state.min_prime_val = min_v
-        st.session_state.max_prime_val = max_v
+        min_v = max(meta.min_idx, min(st.session_state.min_idx_val, meta.max_idx - 1))
+        max_v = min(meta.max_idx, max(st.session_state.max_idx_val, min_v + 1))
+        st.session_state.min_idx_val = min_v
+        st.session_state.max_idx_val = max_v
         st.session_state.slider_bounds = (min_v, max_v)
 
     col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1, 1, 1.1, 1.1, 2.2])
@@ -287,37 +272,37 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
 
     with col4:
         st.number_input(
-            "Min Prime",
-            min_value=meta.min_prime,
-            max_value=meta.max_prime - 1,
-            key="min_prime_val",
+            "Min Index (n)",
+            min_value=meta.min_idx,
+            max_value=meta.max_idx - 1,
+            key="min_idx_val",
             on_change=sync_from_numbers,
             step=100_000
         )
 
     with col5:
         st.number_input(
-            "Max Prime",
-            min_value=meta.min_prime + 1,
-            max_value=meta.max_prime,
-            key="max_prime_val",
+            "Max Index (m)",
+            min_value=meta.min_idx + 1,
+            max_value=meta.max_idx,
+            key="max_idx_val",
             on_change=sync_from_numbers,
             step=100_000
         )
 
     with col6:
         st.slider(
-            "Prime Range Slider",
-            min_value=meta.min_prime,
-            max_value=meta.max_prime,
+            "Prime Index Range (n to m)",
+            min_value=meta.min_idx,
+            max_value=meta.max_idx,
             key="slider_bounds",
             on_change=sync_from_slider
         )
 
     return FilterParams(
         k=int(k),
-        min_prime=int(st.session_state.min_prime_val),
-        max_prime=int(st.session_state.max_prime_val),
+        min_idx=int(st.session_state.min_idx_val),
+        max_idx=int(st.session_state.max_idx_val),
         top_n=int(top_n),
         sort_by=sort_by
     )
@@ -373,18 +358,17 @@ def main():
 
     # 3. Connection & Metadata
     conn = get_db_connection()
-    metadata = fetch_dataset_metadata(conn, config.parquet_file)
+    metadata = fetch_dataset_metadata(conn, config.gaps_file)
 
     # 4. Mathematical Definitions & Sticky Control Bar
     render_math_definitions()
     params = render_top_filter_bar(metadata)
 
-    # 5. Data Fetch & Process
     with st.spinner("Executing DuckDB query..."):
-        raw_df = query_prime_gaps(conn, config.parquet_file, config.gaps_file, params)
+        raw_df = query_prime_gaps(conn, config.gaps_file, params)
 
     if raw_df.empty:
-        st.warning("No prime pairs found in the selected range for this step size k.")
+        st.warning("No prime pairs found in the selected index range for this step size k.")
         return
 
     df = process_gap_dataframe(raw_df, params.sort_by)
