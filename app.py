@@ -10,9 +10,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_config(key, default_value=""):
-    if key in st.secrets:
-        return st.secrets[key]
-    return os.getenv(key, default_value)
+    # 1. Check OS environment variables (loaded via .env)
+    env_val = os.getenv(key)
+    if env_val:
+        return env_val
+    
+    # 2. Safely check Streamlit Cloud secrets
+    try:
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        # Fails silently locally when no secrets.toml file exists
+        pass
+        
+    # 3. Fallback default
+    return default_value
 # ============================================================================
 # 1. Configuration & Environment Variables
 # ============================================================================
@@ -23,9 +35,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Read from .env, Streamlit Cloud secrets, or fallback defaults
-PARQUET_FILE = get_config("PARQUET_FILE_PATH")
-RELEASE_URL = get_config("RELEASE_URL")
+# Read configuration safely
+PARQUET_FILE = get_config("PARQUET_FILE_PATH", "primes.parquet")
+RELEASE_URL = get_config(
+    "RELEASE_URL", 
+    "https://github.com/JunghunLeePhD/primes/releases/download/v1.0.0/primes.parquet"
+)
 
 # ============================================================================
 # 2. Auto-Download Helper for Large Files (500 MB+)
