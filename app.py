@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 @dataclass(frozen=True)
 class AppConfig:
     parquet_file: str
+    gaps_file: str      # Pre-computed gap database (gaps.parquet); empty string if not configured
     release_url: str
 
 class FilterParams(NamedTuple):
@@ -47,6 +48,7 @@ def load_config() -> AppConfig:
 
     return AppConfig(
         parquet_file=_get_val("PARQUET_FILE_PATH", "primes.parquet"),
+        gaps_file=_get_val("GAPS_FILE_PATH", "gaps.parquet"),
         release_url=_get_val(
             "RELEASE_URL",
             "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/primes.parquet"
@@ -115,26 +117,66 @@ def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, file_path: str) -> 
 
 @st.cache_data(show_spinner=False)
 def query_prime_gaps(
-    _conn: duckdb.DuckDBPyConnection, 
-    file_path: str, 
-    params: FilterParams
+    _conn: duckdb.DuckDBPyConnection,
+    file_path: str,
+    gaps_file: str,
+    params: FilterParams,
 ) -> pd.DataFrame:
-    query = f"""
-    WITH interval_primes AS (
-        SELECT prime FROM '{file_path}'
+    """Queries gap frequency distribution. Uses gaps.parquet (fast) when available."""
+    use_gaps = bool(gaps_file) and os.path.exists(gaps_file)
+
+    if use_gaps and params.k == 1:
+        # ── Fast path, k=1: no window function needed — direct GROUP BY ─────────
+        query = f"""
+        SELECT gap AS diff, COUNT(*) AS frequency
+        FROM '{gaps_file}'
         WHERE prime BETWEEN {params.min_prime} AND {params.max_prime}
-    ),
-    gaps AS (
-        SELECT LEAD(prime, {params.k}) OVER (ORDER BY prime) - prime AS diff
-        FROM interval_primes
-    )
-    SELECT diff, COUNT(*) AS frequency
-    FROM gaps
-    WHERE diff IS NOT NULL
-    GROUP BY diff
-    ORDER BY frequency DESC
-    LIMIT {params.top_n};
-    """
+        GROUP BY gap
+        ORDER BY frequency DESC
+        LIMIT {params.top_n};
+        """
+    elif use_gaps:
+        # ── Fast path, k>1: sliding window SUM over pre-computed 1-step gaps ────
+        # remaining = (total rows) − (1-indexed row number)
+        # Rows with remaining >= k−1 have a full k-element window ahead of them.
+        query = f"""
+        WITH bounded AS (
+            SELECT
+                prime,
+                SUM(gap) OVER (
+                    ORDER BY prime
+                    ROWS BETWEEN CURRENT ROW AND {params.k - 1} FOLLOWING
+                ) AS diff,
+                COUNT(*) OVER () - ROW_NUMBER() OVER (ORDER BY prime) AS remaining
+            FROM '{gaps_file}'
+            WHERE prime BETWEEN {params.min_prime} AND {params.max_prime}
+        )
+        SELECT diff, COUNT(*) AS frequency
+        FROM bounded
+        WHERE remaining >= {params.k - 1}
+        GROUP BY diff
+        ORDER BY frequency DESC
+        LIMIT {params.top_n};
+        """
+    else:
+        # ── Slow path: compute gaps on the fly from primes.parquet ───────────────
+        query = f"""
+        WITH interval_primes AS (
+            SELECT prime FROM '{file_path}'
+            WHERE prime BETWEEN {params.min_prime} AND {params.max_prime}
+        ),
+        gaps AS (
+            SELECT LEAD(prime, {params.k}) OVER (ORDER BY prime) - prime AS diff
+            FROM interval_primes
+        )
+        SELECT diff, COUNT(*) AS frequency
+        FROM gaps
+        WHERE diff IS NOT NULL
+        GROUP BY diff
+        ORDER BY frequency DESC
+        LIMIT {params.top_n};
+        """
+
     return _conn.sql(query).df()
 
 def process_gap_dataframe(df: pd.DataFrame, sort_by: str) -> pd.DataFrame:
@@ -339,7 +381,7 @@ def main():
 
     # 5. Data Fetch & Process
     with st.spinner("Executing DuckDB query..."):
-        raw_df = query_prime_gaps(conn, config.parquet_file, params)
+        raw_df = query_prime_gaps(conn, config.parquet_file, config.gaps_file, params)
 
     if raw_df.empty:
         st.warning("No prime pairs found in the selected range for this step size k.")

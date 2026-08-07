@@ -2,12 +2,20 @@
 // Execution Pipeline — Prime Gap Analyzer Binary
 // ============================================================================
 //
-// Thin orchestration shell. All algorithm and formatting logic lives in the library:
-//   primes::analysis  — stream_primes, apply_interval, k_step_gaps, count_frequencies, format_report
+// Auto-detects gaps.parquet (fast path) and falls back to primes.parquet (slow path).
+//
+// Fast path  (gaps.parquet present):
+//   stream_gap_pairs → apply_gap_interval → k_step_gaps_from_pairs → count_frequencies
+//
+// Slow path  (primes.parquet only):
+//   stream_primes → apply_interval → k_step_gaps → count_frequencies
 
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use primes::analysis::{apply_interval, count_frequencies, format_report, k_step_gaps, stream_primes};
-use std::{env, fs::File, time::Instant};
+use primes::analysis::{
+    apply_gap_interval, apply_interval, count_frequencies, format_report,
+    k_step_gaps, k_step_gaps_from_pairs, stream_gap_pairs, stream_primes,
+};
+use std::{env, fs::File, path::Path, time::Instant};
 
 // ============================================================================
 // Analyzer Configuration
@@ -30,6 +38,17 @@ impl AnalyzeConfig {
             file_path: args.get(4).cloned().unwrap_or_else(|| "primes.parquet".into()),
         }
     }
+
+    /// Derives the expected gaps database path: same directory as the primes file,
+    /// named `gaps.parquet`.
+    fn gaps_path(&self) -> String {
+        Path::new(&self.file_path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("gaps.parquet")
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 // ============================================================================
@@ -45,21 +64,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     }
 
+    let gaps_path = config.gaps_path();
+    let use_gaps  = Path::new(&gaps_path).exists();
+
     println!("Analyzing prime gaps (p_{{n+{}}} - p_n)", config.k);
     println!("Interval:  [{}, {}]", config.min_prime, config.max_prime);
-    println!("File:      {}\n", config.file_path);
 
+    let frequencies;
     let start_time = Instant::now();
 
-    // Open I/O stream
-    let file = File::open(&config.file_path)?;
-    let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+    if use_gaps {
+        // ── Fast path: read pre-computed 1-step gaps, apply sliding sum ──────
+        println!("Source:    {} (gap database — fast path)\n", gaps_path);
 
-    // Declarative FP pipeline
-    let frequencies = count_frequencies(k_step_gaps(
-        apply_interval(stream_primes(reader), config.min_prime, config.max_prime),
-        config.k,
-    ));
+        let file   = File::open(&gaps_path)?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+
+        frequencies = count_frequencies(k_step_gaps_from_pairs(
+            apply_gap_interval(stream_gap_pairs(reader), config.min_prime, config.max_prime),
+            config.k,
+        ));
+    } else {
+        // ── Slow path: derive gaps on the fly from raw primes ─────────────────
+        println!("Source:    {} (prime database — slow path)\n", config.file_path);
+        println!("  Tip: run `cargo run --release --bin build_gaps` to build gaps.parquet");
+        println!("       for faster partial-range queries.\n");
+
+        let file   = File::open(&config.file_path)?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+
+        frequencies = count_frequencies(k_step_gaps(
+            apply_interval(stream_primes(reader), config.min_prime, config.max_prime),
+            config.k,
+        ));
+    }
 
     let duration = start_time.elapsed();
 
