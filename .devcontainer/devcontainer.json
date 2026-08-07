@@ -1,20 +1,26 @@
 {
-  "name": "Rust Prime Generator",
-  "image": "mcr.microsoft.com/devcontainers/rust:1",
-  "runArgs": [
-    "--cpus=4"
-  ],
+  "name": "Rust & Python Prime",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "forwardPorts": [8501],
+  "portsAttributes": {
+    "8501": {
+      "label": "Streamlit Web UI",
+      "onAutoForward": "openBrowser"
+    }
+  },
   "customizations": {
     "vscode": {
-      "settings": {
-        "rust-analyzer.check.command": "clippy"
-      },
       "extensions": [
         "rust-lang.rust-analyzer",
         "vadimcn.vscode-lldb",
-        "tamasfe.even-better-toml"
+        "ms-python.python"
       ]
     }
   },
-  "remoteUser": "vscode"
+  "postCreateCommand": "pip install -r requirements.txt"
 }
