@@ -1,4 +1,4 @@
-# Prime Pipeline 🦀📊
+# Jump Champ 🦀📊
 
 A high-performance, multi-threaded Rust pipeline designed to generate billions of prime numbers, store them in highly compressed **Parquet** files using **Delta Binary Packed Encoding**, and perform zero-copy stream analysis on prime gap distributions ($p_{n+k} - p_n$).
 
