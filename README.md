@@ -149,9 +149,17 @@ Total Analyzed Pairs: 999999
 Time Elapsed: 6.2ms
 ```
 
-### **3. Querying with DuckDB**
+### **3. Web UI Dashboard (`app.py`)**
 
-Because the output is standard Parquet, you can run SQL queries directly on `primes.parquet`:
+Streamlit dashboard powered by **DuckDB** for real-time visualization of prime gap distributions over customizable ranges $[A, B]$ and step sizes $k$. Uses SIMD vector subtraction (`LEAD(prime, k) - prime`) and row-group skipping on `primes.parquet` for instant query response times.
+
+```bash
+streamlit run app.py
+```
+
+### **4. Querying with DuckDB**
+
+Because the output is standard Parquet, you can run SQL queries directly on `primes.parquet`:
 
 ```bash
 # Total count and largest prime
