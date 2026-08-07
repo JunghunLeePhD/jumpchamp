@@ -85,18 +85,18 @@ def ensure_database_exists():
 ensure_database_exists()
 
 # ============================================================================
-# 3. DuckDB Database Connection & Metadata
+# 3. DuckDB Database Connection & Memory Safety
 # ============================================================================
 
 st.title("🦀 Prime Gap Distribution Explorer")
-st.markdown("""
-Analyze the frequency of gaps between prime numbers ($p_{n+k} - p_n$) across arbitrary numerical bounds.
-This app streams directly from a compressed Parquet database using DuckDB.
-""")
 
 @st.cache_resource
 def get_duckdb_connection():
-    return duckdb.connect()
+    conn = duckdb.connect()
+    # 🔒 Prevent DuckDB from consuming all system RAM and triggering OOM Killer
+    conn.sql("SET max_memory = '1GB';")
+    conn.sql("SET threads = 2;")
+    return conn
 
 conn = get_duckdb_connection()
 
@@ -131,6 +131,9 @@ k = st.sidebar.number_input(
     help="Computes the difference between p_{n+k} and p_n."
 )
 
+# Default to 1,000,000 or max available to prevent RAM overload on startup
+default_initial_max = min(db_max_p, 1_000_000)
+
 st.sidebar.subheader("Select Prime Interval Bounds")
 min_prime = st.sidebar.number_input(
     "Min Prime (A)",
@@ -143,9 +146,10 @@ max_prime = st.sidebar.number_input(
     "Max Prime (B)",
     min_value=min_prime + 1,
     max_value=db_max_p,
-    value=db_max_p
+    value=default_initial_max
 )
 
+# ⚠️ Make sure top_n is defined HERE before Section 5
 top_n = st.sidebar.slider("Top N Gaps to Show", min_value=5, max_value=50, value=20)
 
 # ============================================================================
@@ -153,15 +157,21 @@ top_n = st.sidebar.slider("Top N Gaps to Show", min_value=5, max_value=50, value
 # ============================================================================
 
 with st.spinner("Executing C++ DuckDB engine query..."):
+    # Convert inputs to clean integers
+    k_val = int(k)
+    min_p_val = int(min_prime)
+    max_p_val = int(max_prime)
+    top_n_val = int(top_n)
+
     query = f"""
     WITH interval_primes AS (
         SELECT prime 
         FROM '{PARQUET_FILE}'
-        WHERE prime BETWEEN {min_prime} AND {max_prime}
+        WHERE prime BETWEEN {min_p_val} AND {max_p_val}
     ),
     gaps AS (
         SELECT 
-            LEAD(prime, {k}) OVER (ORDER BY prime) - prime AS diff
+            LEAD(prime, {k_val}) OVER (ORDER BY prime) - prime AS diff
         FROM interval_primes
     )
     SELECT 
@@ -171,15 +181,10 @@ with st.spinner("Executing C++ DuckDB engine query..."):
     WHERE diff IS NOT NULL
     GROUP BY diff
     ORDER BY frequency DESC
-    LIMIT {top_n};
+    LIMIT {top_n_val};
     """
     
     df = conn.sql(query).df()
-
-if df.empty:
-    st.warning("No prime pairs found in the selected range for this step size k.")
-    st.stop()
-
 # ============================================================================
 # 6. Data Formatting & Visualizations
 # ============================================================================
@@ -225,7 +230,8 @@ with left_col:
         height=500
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Updated: replaced use_container_width=True with width="stretch"
+    st.plotly_chart(fig, width="stretch")
 
 with right_col:
     st.subheader("📊 Data Table")
@@ -235,7 +241,8 @@ with right_col:
     display_df['Frequency'] = display_df['Frequency'].map('{:,}'.format)
     display_df['Percentage'] = display_df['Percentage'].map('{:.2f}%'.format)
     
-    st.dataframe(display_df, hide_index=True, use_container_width=True)
+    # Updated: replaced use_container_width=True with width="stretch"
+    st.dataframe(display_df, hide_index=True, width="stretch")
 
     # CSV Export Button
     csv_data = display_df.to_csv(index=False).encode('utf-8')
