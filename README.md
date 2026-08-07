@@ -143,6 +143,24 @@ duckdb -c "
 "
 ```
 
+## **🤖 Automated GitHub Actions Database Releases**
+
+This repository includes a GitHub Actions workflow ([`.github/workflows/build-release-db.yml`](file:///workspace/.github/workflows/build-release-db.yml)) that automatically builds the prime & gap Parquet files and attaches them directly to GitHub Releases.
+
+### **How to Trigger Automated Builds**
+
+1. **Manual Trigger (GitHub UI):**
+   * Go to the **Actions** tab in your GitHub repository.
+   * Select **Auto-Build & Publish Parquet Database Release**.
+   * Click **Run workflow** and specify target `prime_limit` (e.g. `100000000`), `gap_k` (e.g. `2`), and `release_tag` (e.g. `v1.0.0`).
+
+2. **Automatic Trigger on Tag Push:**
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+   GitHub Actions will automatically run unit tests, build `primes.parquet` and `gaps2.parquet`, and upload them directly to the `v1.0.0` release assets.
+
 ## **🛠️ Architecture & Functional Design**
 
 The project strictly follows Functional Programming (FP) principles:
@@ -166,3 +184,4 @@ The project strictly follows Functional Programming (FP) principles:
 ## **📜 License**
 
 MIT License. Feel free to use and modify for analytical and educational research.
+
