@@ -1,11 +1,12 @@
 use arrow_array::{RecordBatch, UInt64Array};
 use arrow_schema::{DataType, Field, Schema};
-use parquet::arrow::ArrowWriter;
+use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter};
 use parquet::basic::{Compression, Encoding};
 use parquet::file::properties::WriterProperties;
 use rayon::prelude::*;
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -100,19 +101,13 @@ pub fn sieve_range_parallel(start: usize, end: usize, base_primes: &[usize]) -> 
         .collect()
 }
 
-// ============================================================================
-// 3. Lazy Generator Stream
-// ============================================================================
-
-/// Returns a lazy iterator that yields parallel-sieved blocks of primes.
-pub fn stream_prime_blocks(
+/// Returns a lazy iterator that yields sieved blocks for any arbitrary range [start_val, limit].
+pub fn stream_prime_blocks_range(
+    start_val: usize,
     limit: usize,
     block_size: usize,
     base_primes: &[usize],
 ) -> impl Iterator<Item = Vec<u64>> + '_ {
-    let sqrt_limit = (limit as f64).sqrt() as usize;
-    let start_val = sqrt_limit + 1;
-
     (start_val..=limit)
         .step_by(block_size)
         .map(move |block_start| {
@@ -122,8 +117,47 @@ pub fn stream_prime_blocks(
 }
 
 // ============================================================================
-// 4. Parquet Sink Abstraction
+// 3. Parquet Metadata & I/O Helpers
 // ============================================================================
+
+/// Reads maximum prime value from existing Parquet metadata in O(1) time.
+pub fn get_existing_max_prime(path: &str) -> Option<u64> {
+    if !Path::new(path).exists() {
+        return None;
+    }
+
+    let file = File::open(path).ok()?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file).ok()?;
+    let metadata = builder.metadata();
+
+    // 1. Try reading statistics from row group metadata (O(1))
+    let mut max_val: Option<u64> = None;
+    for rg in metadata.row_groups() {
+        if let Some(stats) = rg.column(0).statistics() {
+            if let parquet::file::statistics::Statistics::Int64(s) = stats {
+                if let Some(&max) = s.max_opt() {
+                    let max_u64 = max as u64;
+                    max_val = Some(max_val.map_or(max_u64, |m| m.max(max_u64)));
+                }
+            }
+        }
+    }
+
+    if max_val.is_some() {
+        return max_val;
+    }
+
+    // 2. Fallback: stream batches to read last value
+    let mut reader = builder.build().ok()?;
+    let mut last_p = None;
+    while let Some(Ok(batch)) = reader.next() {
+        let col = batch.column(0).as_any().downcast_ref::<UInt64Array>()?;
+        if !col.is_empty() {
+            last_p = Some(col.value(col.len() - 1));
+        }
+    }
+    last_p
+}
 
 pub struct ParquetPrimeSink {
     schema: Arc<Schema>,
@@ -149,6 +183,11 @@ impl ParquetPrimeSink {
         Ok(Self { schema, writer })
     }
 
+    pub fn write_record_batch(&mut self, batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
+        self.writer.write(batch)?;
+        Ok(())
+    }
+
     pub fn write_batch(&mut self, primes: &[u64]) -> Result<(), Box<dyn std::error::Error>> {
         let array = Arc::new(UInt64Array::from(primes.to_vec()));
         let batch = RecordBatch::try_new(self.schema.clone(), vec![array])?;
@@ -162,48 +201,101 @@ impl ParquetPrimeSink {
     }
 }
 
+/// Copies existing batches from an old Parquet file into a new sink.
+pub fn copy_existing_parquet(
+    input_path: &str,
+    sink: &mut ParquetPrimeSink,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let file = File::open(input_path)?;
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+    let mut count = 0;
+
+    for batch in reader {
+        let batch = batch?;
+        let col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or("Invalid schema in existing parquet file")?;
+
+        count += col.len();
+        sink.write_record_batch(&batch)?;
+    }
+
+    Ok(count)
+}
+
 // ============================================================================
-// 5. Execution Pipeline
+// 4. Execution Pipeline
 // ============================================================================
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let config = Config::from_args(&args);
+    let tmp_path = format!("{}.tmp", config.output_path);
 
-    println!("Generating primes up to {} -> {}", config.limit, config.output_path);
     let start_time = Instant::now();
+    let existing_max = get_existing_max_prime(&config.output_path);
 
-    // 1. Initialize Parquet Output Sink
-    let mut sink = ParquetPrimeSink::create(&config.output_path)?;
-
-    // 2. Precompute Base Small Primes
-    let sqrt_limit = (config.limit as f64).sqrt() as usize;
-    let base_primes = small_primes(sqrt_limit);
-
-    // 3. Write Base Primes
-    let base_u64: Vec<u64> = base_primes.iter().map(|&p| p as u64).collect();
-    sink.write_batch(&base_u64)?;
-    let mut total_primes = base_primes.len();
-
-    // 4. Consume Lazy Block Stream and Write Batches
-    for block in stream_prime_blocks(config.limit, config.block_size, &base_primes) {
-        total_primes += block.len();
-        sink.write_batch(&block)?;
+    // 1. Check if existing computation already covers target limit
+    if let Some(max_p) = existing_max {
+        if (config.limit as u64) <= max_p {
+            println!(
+                "File '{}' already contains primes up to {} (>= requested {}). Nothing to do!",
+                config.output_path, max_p, config.limit
+            );
+            return Ok(());
+        }
     }
 
-    // 5. Finalize Sink
-    sink.finish()?;
+    let mut sink = ParquetPrimeSink::create(&tmp_path)?;
+    let mut total_primes = 0;
+    let start_val;
 
-    // 6. Metrics Reporting
+    // 2. Handle Initial vs. Incremental Setup
+    if let Some(max_p) = existing_max {
+        println!(
+            "Found existing database up to {}. Resuming computation up to {}...",
+            max_p, config.limit
+        );
+        total_primes += copy_existing_parquet(&config.output_path, &mut sink)?;
+        start_val = (max_p + 1) as usize;
+    } else {
+        println!("Creating new prime database up to {}...", config.limit);
+        let sqrt_limit = (config.limit as f64).sqrt() as usize;
+        let base_primes = small_primes(sqrt_limit);
+        let base_u64: Vec<u64> = base_primes.iter().map(|&p| p as u64).collect();
+
+        sink.write_batch(&base_u64)?;
+        total_primes += base_primes.len();
+        start_val = sqrt_limit + 1;
+    }
+
+    // 3. Compute and append new range
+    if start_val <= config.limit {
+        let sqrt_limit = (config.limit as f64).sqrt() as usize;
+        let base_primes = small_primes(sqrt_limit);
+
+        for block in stream_prime_blocks_range(start_val, config.limit, config.block_size, &base_primes) {
+            total_primes += block.len();
+            sink.write_batch(&block)?;
+        }
+    }
+
+    // 4. Finalize Sink and Atomic Swap
+    sink.finish()?;
+    fs::rename(&tmp_path, &config.output_path)?;
+
+    // 5. Output Summary
     let duration = start_time.elapsed();
-    let file_size_bytes = std::fs::metadata(&config.output_path)?.len();
+    let file_size_bytes = fs::metadata(&config.output_path)?.len();
     let bytes_per_prime = file_size_bytes as f64 / total_primes as f64;
 
     println!("\n----------------------------------------");
-    println!("Total Primes:      {}", total_primes);
-    println!("Time Elapsed:      {:.2?}", duration);
-    println!("Parquet File Size: {:.2} MB", file_size_bytes as f64 / 1_048_576.0);
-    println!("Compression Ratio: {:.2} bytes/prime", bytes_per_prime);
+    println!("Total Primes in DB: {}", total_primes);
+    println!("Time Elapsed:       {:.2?}", duration);
+    println!("Parquet File Size:  {:.2} MB", file_size_bytes as f64 / 1_048_576.0);
+    println!("Compression Ratio:  {:.2} bytes/prime", bytes_per_prime);
     println!("----------------------------------------");
 
     Ok(())

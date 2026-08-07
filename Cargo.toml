@@ -1,7 +1,8 @@
 [package]
-name = "prime_pipeline"
+name = "primes"
 version = "0.1.0"
 edition = "2021"
+default-run = "primes"
 
 [dependencies]
 rayon = "1.10"
