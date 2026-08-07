@@ -23,6 +23,7 @@ class FilterParams(NamedTuple):
     min_prime: int
     max_prime: int
     top_n: int
+    sort_by: str  # "Frequency" or "Gap Size"
 
 class DatasetMetadata(NamedTuple):
     min_prime: int
@@ -136,16 +137,44 @@ def query_prime_gaps(
     """
     return _conn.sql(query).df()
 
-def process_gap_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def process_gap_dataframe(df: pd.DataFrame, sort_by: str) -> pd.DataFrame:
+    """Calculates percentages and applies selected sorting order."""
     df = df.copy()
     total_pairs = df['frequency'].sum()
     df['percentage'] = (df['frequency'] / total_pairs * 100).round(2)
+    
+    # Sort DataFrame based on user preference
+    if sort_by == "Gap Size":
+        df = df.sort_values(by="diff", ascending=True)
+    else:
+        df = df.sort_values(by="frequency", ascending=False)
+
     df['diff_label'] = df['diff'].astype(str)
     return df
 
 # ============================================================================
 # 4. View Components Layer (Streamlit UI)
 # ============================================================================
+
+def inject_sticky_navbar_css() -> None:
+    """Injects CSS to pin the top horizontal control row as a sticky header."""
+    st.markdown(
+        """
+        <style>
+        /* Pin top control row to top of page during vertical scrolling */
+        div[data-testid="stHorizontalBlock"] {
+            position: sticky;
+            top: 2.875rem;
+            z-index: 999;
+            background-color: var(--background-color, #0e1117);
+            padding-top: 0.75rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
 def render_math_definitions() -> None:
     """Renders LaTeX mathematical explanations for gap size and step size."""
@@ -163,7 +192,7 @@ def render_math_definitions() -> None:
         )
 
 def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
-    """Renders top control bar with bi-directional syncing between slider and number fields."""
+    """Renders sticky top control bar: Sort Order -> Step Size (k) -> Top N Gaps -> Bounds."""
     default_max = min(meta.max_prime, 1_000_000)
 
     # Initialize state variables
@@ -186,15 +215,14 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
         st.session_state.max_prime_val = max_v
         st.session_state.slider_bounds = (min_v, max_v)
 
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1.2, 1.2, 2.5])
+    col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1, 1, 1.1, 1.1, 2.2])
 
     with col1:
-        top_n = st.number_input(
-            "Top N Gaps",
-            min_value=5,
-            max_value=50,
-            value=20,
-            step=5
+        sort_by = st.selectbox(
+            "Sort Order",
+            options=["Frequency", "Gap Size"],
+            index=0,
+            help="'Frequency' sorts descending by count; 'Gap Size' orders numerically along the X-axis."
         )
 
     with col2:
@@ -207,6 +235,15 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
         )
 
     with col3:
+        top_n = st.number_input(
+            "Top N Gaps",
+            min_value=5,
+            max_value=50,
+            value=20,
+            step=5
+        )
+
+    with col4:
         st.number_input(
             "Min Prime",
             min_value=meta.min_prime,
@@ -216,7 +253,7 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             step=100_000
         )
 
-    with col4:
+    with col5:
         st.number_input(
             "Max Prime",
             min_value=meta.min_prime + 1,
@@ -226,7 +263,7 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
             step=100_000
         )
 
-    with col5:
+    with col6:
         st.slider(
             "Prime Range Slider",
             min_value=meta.min_prime,
@@ -239,11 +276,12 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
         k=int(k),
         min_prime=int(st.session_state.min_prime_val),
         max_prime=int(st.session_state.max_prime_val),
-        top_n=int(top_n)
+        top_n=int(top_n),
+        sort_by=sort_by
     )
 
 def render_gap_distribution_chart(df: pd.DataFrame) -> None:
-    """Renders clean Plotly bar chart with standard typography."""
+    """Renders clean Plotly bar chart maintaining the DataFrame's sorted order."""
     fig = px.bar(
         df,
         x="diff_label",
@@ -258,16 +296,17 @@ def render_gap_distribution_chart(df: pd.DataFrame) -> None:
     fig.update_layout(
         xaxis_title="Gap Size",
         yaxis_title="Frequency Count",
-        xaxis={'type': 'category'},
         showlegend=False,
         height=420,
         margin=dict(l=10, r=10, t=10, b=10),
         font=dict(family="Inter, system-ui, sans-serif", size=13)
     )
+    fig.update_xaxes(type='category', categoryorder='array', categoryarray=df['diff_label'])
+
     st.plotly_chart(fig, width="stretch")
 
 def render_data_table(df: pd.DataFrame) -> None:
-    """Renders tabular format data with an explicit Rank index column."""
+    """Renders tabular format data with explicit Rank indices."""
     display_df = df[['diff', 'frequency', 'percentage']].copy()
     display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
     display_df.columns = ['Rank', 'Gap Size', 'Frequency', 'Percentage']
@@ -283,19 +322,22 @@ def render_data_table(df: pd.DataFrame) -> None:
 def main():
     st.set_page_config(page_title="Prime Gap Explorer", page_icon="🦀", layout="wide")
 
-    # 1. Config & Data File Verification
+    # 1. Inject Sticky Nav Bar CSS
+    inject_sticky_navbar_css()
+
+    # 2. Config & Data File Verification
     config = load_config()
     ensure_dataset_exists(config)
 
-    # 2. Connection & Metadata
+    # 3. Connection & Metadata
     conn = get_db_connection()
     metadata = fetch_dataset_metadata(conn, config.parquet_file)
 
-    # 3. Mathematical Definitions & Filter Controls
+    # 4. Mathematical Definitions & Sticky Control Bar
     render_math_definitions()
     params = render_top_filter_bar(metadata)
 
-    # 4. Data Fetch & Process
+    # 5. Data Fetch & Process
     with st.spinner("Executing DuckDB query..."):
         raw_df = query_prime_gaps(conn, config.parquet_file, params)
 
@@ -303,9 +345,9 @@ def main():
         st.warning("No prime pairs found in the selected range for this step size k.")
         return
 
-    df = process_gap_dataframe(raw_df)
+    df = process_gap_dataframe(raw_df, params.sort_by)
 
-    # 5. Vertical Layout: Chart followed by Data Table
+    # 6. Vertical Layout: Chart followed by Data Table
     render_gap_distribution_chart(df)
     render_data_table(df)
 
