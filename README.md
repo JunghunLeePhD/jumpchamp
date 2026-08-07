@@ -100,58 +100,17 @@ Compression Ratio:  1.31 bytes/prime
 ----------------------------------------
 ```
 
-### **2. Building the Gap Database (`build_gaps`)**
+### **2. Building the 2-Step Gap Database (`build_gaps2`)**
 
-Pre-computes adjacent prime gaps ($\Delta_1(n)$) and stores them as a **single-column `gap: u16` file** in `gaps.parquet` (~95 MB, ~60% smaller than `primes.parquet`). Row position $0 \dots N-1$ implicitly represents prime index $n = 1 \dots N$.
-
-```bash
-cargo run --release --bin build_gaps
-```
-
-### **3. Analyzing Prime Gap Distributions (default `main.rs`)**
-
-Analyze the frequency distribution of k-step prime differences ($p_{n+k} - p_n$) across an optional numerical prime index interval $[n, m]$ ($n$-th prime to $m$-th prime).
-
-#### **Command Syntax**
+Pre-computes 2-step prime gaps ($\Delta_2(n) = p_{n+2} - p_n$) as a **single-column `delta2: u16` file** in `gaps2.parquet` (~90 MB). Enables the Web UI to execute $k=2$ queries with zero windowing and zero subtractions.
 
 ```bash
-cargo run --release -- [k] [min_idx] [max_idx] [gaps_file]
-```
-
-#### **Examples**
-
-```bash
-# 1-step gap (p_{n+1} - p_n) across all primes (auto-detects gaps.parquet if built)
-cargo run --release -- 1
-
-# 2-step gap (p_{n+2} - p_n) for 1st prime to 1,000,000th prime
-cargo run --release -- 2 1 1000000
-
-# 6-step gap (p_{n+6} - p_n) from 100,000th prime to 5,000,000th prime
-cargo run --release -- 6 100000 5000000
-```
-
-#### **Analysis Output Example**
-
-```plaintext
-Analyzing prime gaps (p_{n+2} - p_n)
-Index Interval:  [n=1, m=1000000]
-Source:          gaps.parquet (single-column gap database — fast path)
-
-Diff         Frequency       Percentage  
-------------------------------------------
-6            214,581         21.46%
-12           154,240         15.42%
-8            108,310         10.83%
-10           102,102         10.21%
-------------------------------------------
-Total Analyzed Pairs: 999999
-Time Elapsed: 6.2ms
+cargo run --release --bin build_gaps2
 ```
 
 ### **3. Web UI Dashboard (`app.py`)**
 
-Streamlit dashboard powered by **DuckDB** for real-time visualization of prime gap distributions over customizable ranges $[A, B]$ and step sizes $k$. Uses SIMD vector subtraction (`LEAD(prime, k) - prime`) and row-group skipping on `primes.parquet` for instant query response times.
+Streamlit dashboard specialized for real-time visualization of 2-step prime gap distributions ($\Delta_2(n) = p_{n+2} - p_n$, $k=2$). Queries the single-column `gaps2.parquet` database (~90 MB) with zero windowing operator overhead and zero subtractions.
 
 ```bash
 streamlit run app.py
