@@ -1,7 +1,6 @@
 import os
 import urllib.request
 from dataclasses import dataclass
-from typing import NamedTuple
 
 import duckdb
 import pandas as pd
@@ -18,16 +17,19 @@ class AppConfig:
     gaps2_file: str
     release_url: str
 
-class FilterParams(NamedTuple):
+@dataclass(frozen=True)
+class FilterParams:
     min_idx: int
     max_idx: int
     top_n: int
     sort_by: str  # "Frequency" or "Gap Size"
 
-class DatasetMetadata(NamedTuple):
+@dataclass(frozen=True)
+class DatasetMetadata:
     min_idx: int
     max_idx: int
     total_count: int
+
 
 
 def load_config() -> AppConfig:

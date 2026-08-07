@@ -9,7 +9,7 @@ on:
       prime_limit:
         description: 'Target Prime Limit (N)'
         required: true
-        default: '1000000000'
+        default: '10000000000'
         type: string
       gap_k:
         description: 'Gap Step Size (k)'
