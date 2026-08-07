@@ -7,7 +7,6 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 _db_lock = threading.Lock()
@@ -183,77 +182,7 @@ def inject_sticky_navbar_css() -> None:
         unsafe_allow_html=True
     )
 
-def lock_controls_css() -> None:
-    """Injects CSS to freeze pointer events and dim filter controls during database query and rendering."""
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stHorizontalBlock"] {
-            pointer-events: none !important;
-            opacity: 0.55 !important;
-            filter: grayscale(30%);
-            transition: opacity 0.15s ease-in-out;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
 
-def unlock_controls_css() -> None:
-    """Injects CSS to restore pointer events and full opacity on filter controls after rendering."""
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stHorizontalBlock"] {
-            pointer-events: auto !important;
-            opacity: 1.0 !important;
-            filter: none !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-def inject_instant_freeze_js() -> None:
-    """Injects client-side JavaScript to lock top filter controls in 0ms on the first user input event."""
-    js_code = """
-    <script>
-    (function() {
-        const parentDoc = window.parent.document;
-
-        function freeze() {
-            const bar = parentDoc.querySelector('div[data-testid="stHorizontalBlock"]');
-            if (bar) {
-                bar.style.pointerEvents = 'none';
-                bar.style.opacity = '0.5';
-                bar.style.filter = 'grayscale(40%)';
-                bar.style.transition = 'opacity 0.1s ease-in-out';
-            }
-        }
-
-        function attach() {
-            const bar = parentDoc.querySelector('div[data-testid="stHorizontalBlock"]');
-            if (!bar) return;
-
-            // Reset styles if previously frozen
-            bar.style.pointerEvents = 'auto';
-            bar.style.opacity = '1.0';
-            bar.style.filter = 'none';
-
-            const targets = bar.querySelectorAll('input, select, button, div[role="slider"], div[data-baseweb="select"]');
-            targets.forEach(el => {
-                el.addEventListener('pointerdown', freeze, { capture: true, once: true });
-                el.addEventListener('change', freeze, { capture: true, once: true });
-                el.addEventListener('input', freeze, { capture: true, once: true });
-                el.addEventListener('keydown', freeze, { capture: true, once: true });
-            });
-        }
-
-        setTimeout(attach, 150);
-    })();
-    </script>
-    """
-    components.html(js_code, height=0, width=0)
 
 def render_math_definitions() -> None:
     """Renders LaTeX mathematical explanations for 2-step prime gap size."""
@@ -269,7 +198,7 @@ def render_math_definitions() -> None:
         )
 
 def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) -> FilterParams:
-    """Renders sticky top control bar without an Apply button, disabling controls during execution."""
+    """Renders sticky top control bar without an Apply button, updating live on parameter changes."""
     default_max = min(meta.max_idx, 1_000_000)
 
     # Initialize state variables
@@ -394,9 +323,8 @@ def render_data_table(df: pd.DataFrame) -> None:
 def main():
     st.set_page_config(page_title="2-Step Prime Gap Explorer", page_icon="🦀", layout="wide")
 
-    # 1. Inject Sticky Navbar & Instant Client-Side Freeze JS
+    # 1. Inject Sticky Navbar CSS
     inject_sticky_navbar_css()
-    inject_instant_freeze_js()
 
     # 2. Config & Data File Verification
     config = load_config()
@@ -412,8 +340,7 @@ def main():
     is_processing = st.session_state.get("is_processing", False)
     params = render_top_filter_bar(metadata, is_processing=is_processing)
 
-    # Freeze frontend control interaction during DuckDB query & chart rendering
-    lock_controls_css()
+    # Lock processing while fetching and rendering
     st.session_state["is_processing"] = True
     try:
         with st.spinner("Executing DuckDB query & rendering visualisations..."):
@@ -430,7 +357,6 @@ def main():
             render_data_table(df)
     finally:
         st.session_state["is_processing"] = False
-        unlock_controls_css()
 
 if __name__ == "__main__":
     main()
