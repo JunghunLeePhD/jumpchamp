@@ -1,7 +1,10 @@
 [package]
 name = "prime_pipeline"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 rayon = "1.10"
+arrow-array = "53.0"
+arrow-schema = "53.0"
+parquet = { version = "53.0", features = ["arrow"] }

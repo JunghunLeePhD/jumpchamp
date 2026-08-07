@@ -3,6 +3,9 @@
 **/*.rs.bk
 Cargo.lock.msvc
 
+# Output datasets
+*.parquet
+
 # IDE & Editor settings
 .vscode/*
 !.vscode/settings.json
