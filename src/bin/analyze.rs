@@ -1,19 +1,39 @@
 use arrow_array::UInt64Array;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::env;
 use std::fs::File;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let file_path = if args.len() > 1 {
-        &args[1]
+
+    // Argument 1: Step size k (default: 2)
+    let k: usize = if args.len() > 1 {
+        args[1].parse().unwrap_or_else(|_| {
+            eprintln!("Error: Step size k must be a positive integer (>= 1)");
+            std::process::exit(1);
+        })
+    } else {
+        2
+    };
+
+    if k == 0 {
+        eprintln!("Error: Step size k must be at least 1");
+        std::process::exit(1);
+    }
+
+    // Argument 2: Parquet file path (default: "primes.parquet")
+    let file_path = if args.len() > 2 {
+        &args[2]
     } else {
         "primes.parquet"
     };
 
-    println!("Analyzing prime gaps (p_{{n+2}} - p_n) from: {}\n", file_path);
+    println!(
+        "Analyzing prime gaps (p_{{n+{}}} - p_n) from: {}\n",
+        k, file_path
+    );
     let start_time = Instant::now();
 
     // 1. Open Parquet Reader
@@ -21,10 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
     let mut reader = builder.build()?;
 
-    // 2. Sliding window buffer for p_{n+2} - p_n
-    let mut prev_2: Option<u64> = None;
-    let mut prev_1: Option<u64> = None;
-
+    // 2. Sliding window buffer of length k + 1
+    let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
     let mut freq_map: BTreeMap<u64, u64> = BTreeMap::new();
     let mut total_pairs = 0u64;
 
@@ -37,14 +55,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Expected UInt64Array in first column");
 
         for &p in column.values() {
-            if let Some(p_n) = prev_2 {
+            window.push_back(p);
+
+            // Once we have k + 1 primes, calculate difference between front and back
+            if window.len() == k + 1 {
+                let p_n = window.pop_front().unwrap();
                 let diff = p - p_n;
                 *freq_map.entry(diff).or_insert(0) += 1;
                 total_pairs += 1;
             }
-            // Shift sliding window
-            prev_2 = prev_1;
-            prev_1 = Some(p);
         }
     }
 
