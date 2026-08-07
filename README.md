@@ -8,16 +8,19 @@ Built with a functional programming architecture, cache-aligned multi-threading 
 
 ## 🌟 Key Features
 
-* **Parallel Segmented Sieve**: Utilizes Rayon to process 32 KB CPU L1-cache-aligned blocks in parallel.
+* **Parallel Bitpacked Segmented Sieve**: Utilizes Rayon to process 64-bit bitmasked odd-only segments in parallel, fitting 262,144 candidates into CPU L1-cache for an **8x-16x memory footprint reduction**.
 
 * **Delta-Packed Parquet Sink**: Stores primes using Delta Binary Packed encoding + ZSTD compression, reducing storage from **8 bytes/prime** down to **~1.3 bytes/prime** (~84% space reduction).
 * **Lazy $O(1)$ Memory Streaming**: Streams blocks directly to disk without keeping billions of integers in RAM.
 
-* **FP Architecture**: Clean functional separation of pure core algorithms, lazy stream generators, and I/O sinks.
+* **Advanced Mathematical Analytics**:
+  * **Record Gap Tracking**: Computes maximal record-breaking prime gaps $\Delta(n)$ and Cramér Ratios $C(n) = \frac{\Delta(n)}{(\ln p_n)^2}$.
+  * **Residue Class Analysis**: Analyzes prime gap modulo alignments ($g \pmod 6$, $g \pmod{30}$).
+  * **Markov Gap Transitions**: Analyzes 2-step gap transition probabilities $(g_n \to g_{n+1})$.
 
-* **Interval & Gap Analyzer (`analyze`)**: Secondary binary for computing $k$-step prime gap distributions ($p_{n+k} - p_n$) over arbitrary intervals $[A, B]$ with early exit optimizations.
+* **Comprehensive Test Suite**: Pure functional architecture with zero-filesystem unit tests for algorithms, iterator combinators, and Parquet round-trips (`cargo test`).
 
-* **SQL & DuckDB Ready**: Interoperable with DuckDB, Python (Pandas/Polars), and standard Apache Arrow tooling
+* **SQL & DuckDB Ready**: Interoperable with DuckDB, Python (Pandas/Polars), and standard Apache Arrow tooling.
 
 ## 📁 Project Structure
 
@@ -31,8 +34,8 @@ jumpchamp/
 │   ├── main.rs                  # Analyzer binary (default entry point) — thin shell
 │   ├── sieve/
 │   │   ├── mod.rs               # Re-exports basic, parallel, stream
-│   │   ├── basic.rs             # small_primes, sieve_segment (pure, sequential)
-│   │   ├── parallel.rs          # sieve_range_parallel (Rayon, L1-cache-aligned)
+│   │   ├── basic.rs             # small_primes, sieve_segment (bitpacked odd-only sieve)
+│   │   ├── parallel.rs          # sieve_range_parallel (Rayon L1-cache bitmask dispatcher)
 │   │   └── stream.rs            # stream_prime_blocks_range (lazy block iterator)
 │   ├── storage/
 │   │   ├── mod.rs               # Re-exports parquet, gaps_parquet
@@ -40,8 +43,8 @@ jumpchamp/
 │   │   └── gaps_parquet.rs      # GapsSink for storing (prime, gap) pairs
 │   ├── analysis/
 │   │   ├── mod.rs               # Re-exports gaps, report
-│   │   ├── gaps.rs              # stream_primes, apply_interval, k_step_gaps, count_frequencies, stream_gap_pairs, apply_gap_interval, k_step_gaps_from_pairs
-│   │   └── report.rs            # format_report (pure text formatter)
+│   │   ├── gaps.rs              # stream_primes, apply_interval, k_step_gaps, record_gaps, count_residues, gap_transition_matrix
+│   │   └── report.rs            # format_report, format_record_gaps_report, format_residue_report
 │   └── bin/
 │       ├── build_primes.rs      # Prime database builder binary
 │       └── build_gaps.rs        # Gap database builder binary
@@ -54,9 +57,9 @@ Each domain layer is independently readable and testable:
 
 | Layer | Modules | Responsibility | External Deps |
 |-------|---------|---------------|---------------|
-| `sieve/` | `basic`, `parallel`, `stream` | Prime generation algorithms | `rayon` |
+| `sieve/` | `basic`, `parallel`, `stream` | Bitpacked odd-only prime generation | `rayon` |
 | `storage/` | `parquet`, `gaps_parquet` | Parquet read/write sinks | `arrow`, `parquet` crates |
-| `analysis/` | `gaps`, `report` | Gap analysis pipeline & formatting | `parquet` crate (reader) |
+| `analysis/` | `gaps`, `report` | Gap analysis, Cramér ratios, residues & report formatting | `parquet` crate (reader) |
 | _(top-level)_ | `config` | CLI arg parsing for the generator | none |
 
 ## **🚀 Quick Start**

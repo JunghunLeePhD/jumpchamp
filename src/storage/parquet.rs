@@ -126,3 +126,29 @@ pub fn copy_existing_parquet(
 
     Ok(count)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parquet_sink_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let tmp_path = ".test_primes_roundtrip.parquet";
+
+        let primes = vec![2u64, 3, 5, 7, 11, 13, 17, 19];
+        {
+            let mut sink = ParquetPrimeSink::create(tmp_path)?;
+            sink.write_batch(&primes)?;
+            sink.finish()?;
+        }
+
+        let max_prime = get_existing_max_prime(tmp_path);
+        assert_eq!(max_prime, Some(19));
+
+        if Path::new(tmp_path).exists() {
+            std::fs::remove_file(tmp_path)?;
+        }
+        Ok(())
+    }
+}
+
