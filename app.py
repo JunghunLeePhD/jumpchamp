@@ -49,7 +49,7 @@ def load_config() -> AppConfig:
         parquet_file=_get_val("PARQUET_FILE_PATH", "primes.parquet"),
         release_url=_get_val(
             "RELEASE_URL",
-            "https://github.com/JunghunLeePhD/primes/releases/download/v1.0.0/primes.parquet"
+            "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/primes.parquet"
         )
     )
 
@@ -218,20 +218,20 @@ def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
     col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1, 1, 1.1, 1.1, 2.2])
 
     with col1:
-        sort_by = st.selectbox(
-            "Sort Order",
-            options=["Frequency", "Gap Size"],
-            index=0,
-            help="'Frequency' sorts descending by count; 'Gap Size' orders numerically along the X-axis."
-        )
-
-    with col2:
         k = st.number_input(
             "Step Size (k)",
             min_value=1,
             max_value=20,
             value=2,
             help="Computes distance between primes across k steps."
+        )
+
+    with col2:
+        sort_by = st.selectbox(
+            "Sort Order",
+            options=["Frequency", "Gap Size"],
+            index=0,
+            help="'Frequency' sorts descending by count; 'Gap Size' orders numerically along the X-axis."
         )
 
     with col3:
