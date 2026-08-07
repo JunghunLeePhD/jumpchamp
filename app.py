@@ -53,14 +53,13 @@ def load_config() -> AppConfig:
     )
 
 # ============================================================================
-# 2. Asset Ingestion & Storage Layer
+# 2. Asset Ingestion Layer
 # ============================================================================
 
 def ensure_dataset_exists(config: AppConfig) -> None:
     """Validates existence and size of primes.parquet; downloads from release asset if missing/corrupt."""
     file_path = config.parquet_file
     
-    # Remove empty or corrupt files (< 1MB)
     if os.path.exists(file_path):
         if os.path.getsize(file_path) < 1_000_000:
             os.remove(file_path)
@@ -100,7 +99,6 @@ def ensure_dataset_exists(config: AppConfig) -> None:
 
 @st.cache_resource
 def get_db_connection() -> duckdb.DuckDBPyConnection:
-    """Initializes a shared DuckDB connection capped to safe memory limits."""
     conn = duckdb.connect()
     conn.sql("SET max_memory = '1GB';")
     conn.sql("SET threads = 2;")
@@ -108,7 +106,6 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
 
 @st.cache_data(show_spinner=False)
 def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, file_path: str) -> DatasetMetadata:
-    """Queries min/max prime bounds and total count in O(1) time."""
     meta = _conn.sql(f"""
         SELECT MIN(prime), MAX(prime), COUNT(*) 
         FROM '{file_path}'
@@ -121,7 +118,6 @@ def query_prime_gaps(
     file_path: str, 
     params: FilterParams
 ) -> pd.DataFrame:
-    """Executes C++ window function to calculate gap distribution for step size k."""
     query = f"""
     WITH interval_primes AS (
         SELECT prime FROM '{file_path}'
@@ -141,7 +137,6 @@ def query_prime_gaps(
     return _conn.sql(query).df()
 
 def process_gap_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Transforms raw SQL query results into formatted display vectors."""
     df = df.copy()
     total_pairs = df['frequency'].sum()
     df['percentage'] = (df['frequency'] / total_pairs * 100).round(2)
@@ -152,79 +147,134 @@ def process_gap_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 # 4. View Components Layer (Streamlit UI)
 # ============================================================================
 
-def render_sidebar(meta: DatasetMetadata) -> FilterParams:
-    """Renders filter controls and returns strongly typed user inputs."""
-    st.sidebar.header("⚙️ Filter Parameters")
-    st.sidebar.metric("Total Primes in DB", f"{meta.total_count:,}")
-    st.sidebar.metric("Prime Range", f"{meta.min_prime:,} to {meta.max_prime:,}")
-    st.sidebar.markdown("---")
+def render_math_definitions() -> None:
+    """Renders LaTeX mathematical explanations for gap size and step size."""
+    with st.expander("📖 Mathematical Definitions & Notation", expanded=False):
+        st.markdown(
+            r"""
+            Let $p_n$ denote the $n$-th prime number in sequence ($p_1 = 2, p_2 = 3, p_3 = 5, \dots$).
 
-    k = st.sidebar.number_input(
-        "Step Size (k)", min_value=1, max_value=20, value=2,
-        help="Computes difference between p_{n+k} and p_n."
-    )
-    
+            * **Step Size ($k$):** The index offset between prime numbers in sequence ($k \ge 1$).
+              * When $k = 1$, we evaluate adjacent prime gaps: $p_{n+1} - p_n$.
+              * When $k = 2$, we evaluate primes separated by one intervening prime: $p_{n+2} - p_n$.
+            * **Gap Size ($\Delta$):** The arithmetic difference computed as:
+              $$\Delta_k(n) = p_{n+k} - p_n$$
+            """
+        )
+
+def render_top_filter_bar(meta: DatasetMetadata) -> FilterParams:
+    """Renders top control bar with bi-directional syncing between slider and number fields."""
     default_max = min(meta.max_prime, 1_000_000)
-    st.sidebar.subheader("Select Prime Interval Bounds")
-    
-    min_p = st.sidebar.number_input(
-        "Min Prime (A)", min_value=meta.min_prime, max_value=meta.max_prime - 1, value=meta.min_prime
+
+    # Initialize state variables
+    if "min_prime_val" not in st.session_state:
+        st.session_state.min_prime_val = meta.min_prime
+    if "max_prime_val" not in st.session_state:
+        st.session_state.max_prime_val = default_max
+    if "slider_bounds" not in st.session_state:
+        st.session_state.slider_bounds = (st.session_state.min_prime_val, st.session_state.max_prime_val)
+
+    # Sync callbacks
+    def sync_from_slider():
+        st.session_state.min_prime_val = st.session_state.slider_bounds[0]
+        st.session_state.max_prime_val = st.session_state.slider_bounds[1]
+
+    def sync_from_numbers():
+        min_v = max(meta.min_prime, min(st.session_state.min_prime_val, meta.max_prime - 1))
+        max_v = min(meta.max_prime, max(st.session_state.max_prime_val, min_v + 1))
+        st.session_state.min_prime_val = min_v
+        st.session_state.max_prime_val = max_v
+        st.session_state.slider_bounds = (min_v, max_v)
+
+    col1, col2, col3, col4, col5 = st.columns([1, 1, 1.2, 1.2, 2.5])
+
+    with col1:
+        top_n = st.number_input(
+            "Top N Gaps",
+            min_value=5,
+            max_value=50,
+            value=20,
+            step=5
+        )
+
+    with col2:
+        k = st.number_input(
+            "Step Size (k)",
+            min_value=1,
+            max_value=20,
+            value=2,
+            help="Computes distance between primes across k steps."
+        )
+
+    with col3:
+        st.number_input(
+            "Min Prime",
+            min_value=meta.min_prime,
+            max_value=meta.max_prime - 1,
+            key="min_prime_val",
+            on_change=sync_from_numbers,
+            step=100_000
+        )
+
+    with col4:
+        st.number_input(
+            "Max Prime",
+            min_value=meta.min_prime + 1,
+            max_value=meta.max_prime,
+            key="max_prime_val",
+            on_change=sync_from_numbers,
+            step=100_000
+        )
+
+    with col5:
+        st.slider(
+            "Prime Range Slider",
+            min_value=meta.min_prime,
+            max_value=meta.max_prime,
+            key="slider_bounds",
+            on_change=sync_from_slider
+        )
+
+    return FilterParams(
+        k=int(k),
+        min_prime=int(st.session_state.min_prime_val),
+        max_prime=int(st.session_state.max_prime_val),
+        top_n=int(top_n)
     )
-    max_p = st.sidebar.number_input(
-        "Max Prime (B)", min_value=min_p + 1, max_value=meta.max_prime, value=default_max
-    )
-    top_n = st.sidebar.slider("Top N Gaps to Show", min_value=5, max_value=50, value=20)
 
-    return FilterParams(k=int(k), min_prime=int(min_p), max_prime=int(max_p), top_n=int(top_n))
-
-def render_kpi_cards(k: int, df: pd.DataFrame) -> None:
-    """Displays top-level metric highlights."""
-    most_frequent_gap = int(df.iloc[0]['diff'])
-    highest_pct = df.iloc[0]['percentage']
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Selected Step Size", f"k = {k}")
-    col2.metric("Most Frequent Gap", f"Δ = {most_frequent_gap}")
-    col3.metric("Top Gap Percentage", f"{highest_pct}%")
-
-def render_gap_distribution_chart(df: pd.DataFrame, k: int) -> None:
-    """Renders Plotly interactive frequency distribution bar chart."""
-    st.subheader(f"Frequency Distribution for $p_{{n+{k}}} - p_n$")
+def render_gap_distribution_chart(df: pd.DataFrame) -> None:
+    """Renders clean Plotly bar chart with standard typography."""
     fig = px.bar(
         df,
-        x="diff_label", y="frequency", text="percentage",
-        labels={"diff_label": f"Difference ($p_{{n+{k}}} - p_n$)", "frequency": "Frequency"},
+        x="diff_label",
+        y="frequency",
+        text="percentage",
+        labels={"diff_label": "Gap Size", "frequency": "Frequency"},
         hover_data={"diff_label": True, "frequency": ":,", "percentage": ":.2f%"},
-        color="frequency", color_continuous_scale="Viridis"
+        color="frequency",
+        color_continuous_scale="Viridis"
     )
     fig.update_traces(texttemplate='%{text}%', textposition='outside')
     fig.update_layout(
-        xaxis_title=f"Gap Size ($p_{{n+{k}}} - p_n$)",
-        yaxis_title="Count",
+        xaxis_title="Gap Size",
+        yaxis_title="Frequency Count",
         xaxis={'type': 'category'},
         showlegend=False,
-        height=500
+        height=420,
+        margin=dict(l=10, r=10, t=10, b=10),
+        font=dict(family="Inter, system-ui, sans-serif", size=13)
     )
     st.plotly_chart(fig, width="stretch")
 
-def render_data_table_and_export(df: pd.DataFrame, params: FilterParams) -> None:
-    """Displays formatted tabular data and CSV export capability."""
-    st.subheader("📊 Data Table")
-    
+def render_data_table(df: pd.DataFrame) -> None:
+    """Renders tabular format data with an explicit Rank index column."""
     display_df = df[['diff', 'frequency', 'percentage']].copy()
-    display_df.columns = ['Gap (Diff)', 'Frequency', 'Percentage']
+    display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
+    display_df.columns = ['Rank', 'Gap Size', 'Frequency', 'Percentage']
     display_df['Frequency'] = display_df['Frequency'].map('{:,}'.format)
     display_df['Percentage'] = display_df['Percentage'].map('{:.2f}%'.format)
-    
-    st.dataframe(display_df, hide_index=True, width="stretch")
 
-    csv_data = display_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Table as CSV",
-        data=csv_data,
-        file_name=f"prime_gaps_k{params.k}_interval_{params.min_prime}_{params.max_prime}.csv",
-        mime="text/csv"
-    )
+    st.dataframe(display_df, hide_index=True, width="stretch")
 
 # ============================================================================
 # 5. Main Application Orchestrator
@@ -232,13 +282,8 @@ def render_data_table_and_export(df: pd.DataFrame, params: FilterParams) -> None
 
 def main():
     st.set_page_config(page_title="Prime Gap Explorer", page_icon="🦀", layout="wide")
-    st.title("🦀 Prime Gap Distribution Explorer")
-    st.markdown("""
-    Analyze the frequency of gaps between prime numbers ($p_{n+k} - p_n$) across arbitrary numerical bounds.
-    This app streams directly from a compressed Parquet database using DuckDB.
-    """)
 
-    # 1. Config & Data Source
+    # 1. Config & Data File Verification
     config = load_config()
     ensure_dataset_exists(config)
 
@@ -246,10 +291,11 @@ def main():
     conn = get_db_connection()
     metadata = fetch_dataset_metadata(conn, config.parquet_file)
 
-    # 3. Sidebar View & User Input
-    params = render_sidebar(metadata)
+    # 3. Mathematical Definitions & Filter Controls
+    render_math_definitions()
+    params = render_top_filter_bar(metadata)
 
-    # 4. Data Fetch & Process (Cached execution)
+    # 4. Data Fetch & Process
     with st.spinner("Executing DuckDB query..."):
         raw_df = query_prime_gaps(conn, config.parquet_file, params)
 
@@ -259,15 +305,9 @@ def main():
 
     df = process_gap_dataframe(raw_df)
 
-    # 5. View Rendering
-    render_kpi_cards(params.k, df)
-    st.markdown("---")
-
-    left_col, right_col = st.columns([2, 1])
-    with left_col:
-        render_gap_distribution_chart(df, params.k)
-    with right_col:
-        render_data_table_and_export(df, params)
+    # 5. Vertical Layout: Chart followed by Data Table
+    render_gap_distribution_chart(df)
+    render_data_table(df)
 
 if __name__ == "__main__":
     main()
