@@ -9,7 +9,33 @@ use std::fs::File;
 use std::sync::Arc;
 use std::time::Instant;
 
-fn find_small_primes(limit: usize) -> Vec<usize> {
+// ============================================================================
+// 1. Domain Configuration
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub limit: usize,
+    pub output_path: String,
+    pub block_size: usize,
+}
+
+impl Config {
+    pub fn from_args(args: &[String]) -> Self {
+        Self {
+            limit: args.get(1).and_then(|s| s.parse().ok()).unwrap_or(10_000_000),
+            output_path: "primes.parquet".into(),
+            block_size: 10_000_000,
+        }
+    }
+}
+
+// ============================================================================
+// 2. Pure Mathematical Sieves
+// ============================================================================
+
+/// Pure Function: Finds base prime numbers up to `limit` sequentially.
+pub fn small_primes(limit: usize) -> Vec<usize> {
     if limit < 2 {
         return vec![];
     }
@@ -32,109 +58,145 @@ fn find_small_primes(limit: usize) -> Vec<usize> {
     (2..=limit).filter(|&x| is_prime[x]).collect()
 }
 
-/// Sieve a specific range [range_start, range_end] in parallel with Rayon
-fn sieve_range(range_start: usize, range_end: usize, small_primes: &[usize]) -> Vec<usize> {
-    let segment_size = 32_768; // 32 KB aligns with CPU L1 cache
-    let num_segments = (range_end - range_start) / segment_size + 1;
+/// Pure Function: Sieves a single segment `[seg_low, seg_high]` using precomputed base primes.
+pub fn sieve_segment(seg_low: usize, seg_high: usize, base_primes: &[usize]) -> Vec<u64> {
+    if seg_low > seg_high {
+        return vec![];
+    }
+
+    let range_len = seg_high - seg_low + 1;
+    let mut is_prime = vec![true; range_len];
+
+    for &p in base_primes {
+        let mut start = (seg_low + p - 1) / p * p;
+        if start == p {
+            start += p;
+        }
+
+        let mut i = start;
+        while i <= seg_high {
+            is_prime[i - seg_low] = false;
+            i += p;
+        }
+    }
+
+    (0..range_len)
+        .filter_map(|i| if is_prime[i] { Some((seg_low + i) as u64) } else { None })
+        .collect()
+}
+
+/// Sieves range `[start, end]` in parallel using Rayon across L1-cache-aligned 32KB segments.
+pub fn sieve_range_parallel(start: usize, end: usize, base_primes: &[usize]) -> Vec<u64> {
+    let segment_size = 32_768; // 32 KB aligned with CPU L1 cache
+    let num_segments = (end - start) / segment_size + 1;
 
     (0..num_segments)
         .into_par_iter()
-        .flat_map(|seg_idx| {
-            let seg_low = range_start + seg_idx * segment_size;
-            let seg_high = (seg_low + segment_size - 1).min(range_end);
-
-            if seg_low > seg_high {
-                return vec![];
-            }
-
-            let range_len = seg_high - seg_low + 1;
-            let mut is_prime = vec![true; range_len];
-
-            for &p in small_primes {
-                let mut start = (seg_low + p - 1) / p * p;
-                if start == p {
-                    start += p;
-                }
-
-                let mut i = start;
-                while i <= seg_high {
-                    is_prime[i - seg_low] = false;
-                    i += p;
-                }
-            }
-
-            (0..range_len)
-                .filter_map(|i| if is_prime[i] { Some(seg_low + i) } else { None })
-                .collect::<Vec<usize>>()
+        .flat_map(|idx| {
+            let seg_low = start + idx * segment_size;
+            let seg_high = (seg_low + segment_size - 1).min(end);
+            sieve_segment(seg_low, seg_high, base_primes)
         })
         .collect()
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    let limit: usize = if args.len() > 1 {
-        args[1].parse().unwrap_or(10_000_000)
-    } else {
-        10_000_000
-    };
+// ============================================================================
+// 3. Lazy Generator Stream
+// ============================================================================
 
-    let output_path = "primes.parquet";
-    println!("Generating primes up to {} -> {}", limit, output_path);
-    let start_time = Instant::now();
-
-    // 1. Prepare Arrow Schema (Single UInt64 column 'prime')
-    let schema = Arc::new(Schema::new(vec![Field::new(
-        "prime",
-        DataType::UInt64,
-        false,
-    )]));
-
-    // 2. Configure Parquet Properties: Delta Encoding + ZSTD Compression
-    let writer_props = WriterProperties::builder()
-        .set_column_encoding("prime".into(), Encoding::DELTA_BINARY_PACKED)
-        .set_compression(Compression::ZSTD(Default::default()))
-        .build();
-
-    let file = File::create(output_path)?;
-    let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(writer_props))?;
-
-    // 3. Precompute base small primes
+/// Returns a lazy iterator that yields parallel-sieved blocks of primes.
+pub fn stream_prime_blocks(
+    limit: usize,
+    block_size: usize,
+    base_primes: &[usize],
+) -> impl Iterator<Item = Vec<u64>> + '_ {
     let sqrt_limit = (limit as f64).sqrt() as usize;
-    let small_primes = find_small_primes(sqrt_limit);
+    let start_val = sqrt_limit + 1;
 
-    let small_u64: Vec<u64> = small_primes.iter().map(|&p| p as u64).collect();
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(UInt64Array::from(small_u64))],
-    )?;
-    writer.write(&batch)?;
+    (start_val..=limit)
+        .step_by(block_size)
+        .map(move |block_start| {
+            let block_end = (block_start + block_size - 1).min(limit);
+            sieve_range_parallel(block_start, block_end, base_primes)
+        })
+}
 
-    let mut total_primes = small_primes.len();
+// ============================================================================
+// 4. Parquet Sink Abstraction
+// ============================================================================
 
-    // 4. Stream rest of range in 10,000,000 blocks to bound memory
-    let block_size = 10_000_000;
-    let mut current_start = sqrt_limit + 1;
+pub struct ParquetPrimeSink {
+    schema: Arc<Schema>,
+    writer: ArrowWriter<File>,
+}
 
-    while current_start <= limit {
-        let current_end = (current_start + block_size - 1).min(limit);
+impl ParquetPrimeSink {
+    pub fn create(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "prime",
+            DataType::UInt64,
+            false,
+        )]));
 
-        let chunk_primes = sieve_range(current_start, current_end, &small_primes);
-        total_primes += chunk_primes.len();
+        let props = WriterProperties::builder()
+            .set_column_encoding("prime".into(), Encoding::DELTA_BINARY_PACKED)
+            .set_compression(Compression::ZSTD(Default::default()))
+            .build();
 
-        let chunk_u64: Vec<u64> = chunk_primes.into_iter().map(|p| p as u64).collect();
-        let chunk_array = Arc::new(UInt64Array::from(chunk_u64));
-        let batch = RecordBatch::try_new(schema.clone(), vec![chunk_array])?;
+        let file = File::create(path)?;
+        let writer = ArrowWriter::try_new(file, schema.clone(), Some(props))?;
 
-        writer.write(&batch)?;
-
-        current_start = current_end + 1;
+        Ok(Self { schema, writer })
     }
 
-    // 5. Finalize Parquet File
-    writer.close()?;
+    pub fn write_batch(&mut self, primes: &[u64]) -> Result<(), Box<dyn std::error::Error>> {
+        let array = Arc::new(UInt64Array::from(primes.to_vec()));
+        let batch = RecordBatch::try_new(self.schema.clone(), vec![array])?;
+        self.writer.write(&batch)?;
+        Ok(())
+    }
 
+    pub fn finish(self) -> Result<(), Box<dyn std::error::Error>> {
+        self.writer.close()?;
+        Ok(())
+    }
+}
+
+// ============================================================================
+// 5. Execution Pipeline
+// ============================================================================
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    let config = Config::from_args(&args);
+
+    println!("Generating primes up to {} -> {}", config.limit, config.output_path);
+    let start_time = Instant::now();
+
+    // 1. Initialize Parquet Output Sink
+    let mut sink = ParquetPrimeSink::create(&config.output_path)?;
+
+    // 2. Precompute Base Small Primes
+    let sqrt_limit = (config.limit as f64).sqrt() as usize;
+    let base_primes = small_primes(sqrt_limit);
+
+    // 3. Write Base Primes
+    let base_u64: Vec<u64> = base_primes.iter().map(|&p| p as u64).collect();
+    sink.write_batch(&base_u64)?;
+    let mut total_primes = base_primes.len();
+
+    // 4. Consume Lazy Block Stream and Write Batches
+    for block in stream_prime_blocks(config.limit, config.block_size, &base_primes) {
+        total_primes += block.len();
+        sink.write_batch(&block)?;
+    }
+
+    // 5. Finalize Sink
+    sink.finish()?;
+
+    // 6. Metrics Reporting
     let duration = start_time.elapsed();
-    let file_size_bytes = std::fs::metadata(output_path)?.len();
+    let file_size_bytes = std::fs::metadata(&config.output_path)?.len();
     let bytes_per_prime = file_size_bytes as f64 / total_primes as f64;
 
     println!("\n----------------------------------------");
