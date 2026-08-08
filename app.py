@@ -31,6 +31,7 @@ class DatasetMetadata:
     min_idx: int
     max_idx: int
     total_count: int
+    unique_gaps_count: int
 
 
 
@@ -100,8 +101,13 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
 
 @st.cache_data(show_spinner=False)
 def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps2_file: str) -> DatasetMetadata:
-    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*) FROM '{gaps2_file}'").fetchone()
-    return DatasetMetadata(min_idx=int(meta[0]), max_idx=int(meta[1]), total_count=int(meta[2]))
+    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{gaps2_file}'").fetchone()
+    return DatasetMetadata(
+        min_idx=int(meta[0]),
+        max_idx=int(meta[1]),
+        total_count=int(meta[2]),
+        unique_gaps_count=int(meta[3]),
+    )
 
 @st.cache_data(show_spinner=False)
 def query_prime_gaps(
@@ -224,10 +230,11 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
         top_n = st.number_input(
             "Top N Gaps",
             min_value=5,
-            max_value=50,
-            value=20,
+            max_value=max(5, meta.unique_gaps_count),
+            value=min(20, meta.unique_gaps_count),
             step=5,
-            disabled=is_processing
+            disabled=is_processing,
+            help=f"Select top N gaps to display (Total unique gap sizes in dataset: {meta.unique_gaps_count})"
         )
 
     with col3:
