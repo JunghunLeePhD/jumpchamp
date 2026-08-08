@@ -122,15 +122,18 @@ cargo run --release --bin build_gaps -- 6 primes.parquet custom.parquet
 
 Analyzes prime gap distributions ($p_{n+k} - p_n$) over a specified prime index interval $[n, m]$.
 
+> [!IMPORTANT]
+> **Mandatory Gaps Database Requirement**: By default, the CLI analyzer requires the pre-computed gaps database (`gaps{k}.parquet` or `gaps.parquet`). If missing, run `cargo run --release --bin build_gaps -- {k}` first, or pass `--force` to calculate directly from `primes.parquet` (slow path).
+
 ```bash
-# Default run: k=2 (2-step gaps), all prime indices [1, ∞], using primes.parquet / gaps.parquet
+# Default run: k=2 (2-step gaps) using pre-computed gaps2.parquet
 cargo run --release
 ```
 
-#### **CLI Syntax & Positional Arguments**
+#### **CLI Syntax & Arguments**
 
 ```bash
-cargo run --release -- [k] [min_idx] [max_idx] [primes_file]
+cargo run --release -- [k] [min_idx] [max_idx] [primes_file] [--force]
 ```
 
 | Parameter | Type | Default | Description |
@@ -138,25 +141,26 @@ cargo run --release -- [k] [min_idx] [max_idx] [primes_file]
 | `k` | `usize` | `2` | Step size $k$ for gap calculation ($p_{n+k} - p_n$) |
 | `min_idx` | `u64` | `1` | Start prime index $n$ (1-based inclusive) |
 | `max_idx` | `u64` | `u64::MAX` | End prime index $m$ (1-based inclusive) |
-| `primes_file` | `String` | `primes.parquet` | Input prime database path (or derived `gaps.parquet`) |
+| `primes_file` | `String` | `primes.parquet` | Input prime database path (or derived `gaps{k}.parquet`) |
+| `--force` / `-f` | Flag | `false` | Force execution using `primes.parquet` (slow path) if gaps file is missing |
 
 #### **Execution Examples**
 
 ```bash
-# Analyze 2-step gaps for prime indices 1 to 1,000,000
+# Analyze 2-step gaps using pre-computed gaps2.parquet
 cargo run --release -- 2 1 1000000
 
-# Analyze 4-step gaps (k=4) for primes between index 100,000 and 500,000
-cargo run --release -- 4 100000 500000
+# Analyze 3-step gaps (k=3) using pre-computed gaps3.parquet
+cargo run --release -- 3 1 1000000
 
-# Specify a custom primes parquet database path
-cargo run --release -- 2 1 1000000 /path/to/custom_primes.parquet
+# Force direct calculation from primes.parquet without pre-built gaps file
+cargo run --release -- 2 1 1000000 --force
 ```
 
-#### **Dual Execution Engine**
+#### **Execution Engine**
 
-- ⚡ **Fast Path (`gaps.parquet` present)**: Automatically detects `gaps.parquet` and streams single-column 16-bit integers (`u16`) via `stream_gaps` with offset slicing for zero-copy high-speed analysis (~95 MB RAM).
-- 🐢 **Slow Path (`primes.parquet` fallback)**: If `gaps.parquet` is missing, streams 64-bit primes on the fly from `primes.parquet` and evaluates $k$-step gaps via sliding window combinators.
+- ⚡ **Fast Path (`gaps{k}.parquet` / `gaps.parquet` present)**: Default mode. Streams single-column 16-bit integers (`u16`) via `stream_gaps` with offset slicing for zero-copy high-speed analysis (~95 MB RAM).
+- 🐢 **Slow Path (`--force` flag)**: Triggered when `--force` (or `-f`) is supplied. Streams 64-bit primes on the fly from `primes.parquet` and evaluates $k$-step gaps via sliding window combinators.
 
 ### **4. Web UI Dashboard (`app.py`)**
 
