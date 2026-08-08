@@ -50,8 +50,16 @@ def load_config() -> AppConfig:
 # ============================================================================
 
 def ensure_dataset_exists(gap_k: int, config: AppConfig) -> str:
-    """Validates existence of gaps{k}.parquet; downloads from release asset if missing/corrupt."""
+    """Validates existence of gaps{k}.parquet; purges inactive gap files to keep disk usage under 1 file."""
     gaps_file = f"gaps{gap_k}.parquet"
+
+    # Purge any inactive gaps*.parquet files from local storage to enforce single-file disk quota
+    for filename in os.listdir("."):
+        if filename.startswith("gaps") and filename.endswith(".parquet") and filename != gaps_file:
+            try:
+                os.remove(filename)
+            except OSError:
+                pass
 
     if os.path.exists(gaps_file) and os.path.getsize(gaps_file) > 100_000:
         return gaps_file
