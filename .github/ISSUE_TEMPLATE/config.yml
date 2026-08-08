@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Releases & Pre-Computed Databases
+    url: https://github.com/JunghunLeePhD/jumpchamp/releases
+    about: Download pre-computed primes.parquet and gaps2.parquet database files.
