@@ -2,4 +2,3 @@ streamlit
 duckdb
 plotly
 pandas
-python-dotenv

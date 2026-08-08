@@ -7,7 +7,6 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from dotenv import load_dotenv
 
 _db_lock = threading.Lock()
 
@@ -35,26 +34,15 @@ class DatasetMetadata:
 
 
 
-def load_config() -> AppConfig:
-    """Loads configuration safely from OS environment, Streamlit secrets, or defaults."""
-    load_dotenv()
-    
-    def _get_val(key: str, default: str) -> str:
-        if os.getenv(key):
-            return os.getenv(key)
-        try:
-            if key in st.secrets:
-                return st.secrets[key]
-        except Exception:
-            pass
-        return default
+DEFAULT_GAPS2_FILE = "gaps2.parquet"
+DEFAULT_RELEASE_URL = "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/gaps2.parquet"
 
+
+def load_config() -> AppConfig:
+    """Loads default configuration for dataset file path and remote release download URL."""
     return AppConfig(
-        gaps2_file=_get_val("GAPS2_FILE_PATH", "gaps2.parquet"),
-        release_url=_get_val(
-            "GAPS2_RELEASE_URL",
-            "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/gaps2.parquet"
-        )
+        gaps2_file=DEFAULT_GAPS2_FILE,
+        release_url=DEFAULT_RELEASE_URL,
     )
 
 # ============================================================================
