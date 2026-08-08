@@ -118,7 +118,47 @@ cargo run --release --bin build_gaps -- 3
 cargo run --release --bin build_gaps -- 6 primes.parquet custom.parquet
 ```
 
-### **3. Web UI Dashboard (`app.py`)**
+### **3. Gap Distribution Analyzer (`main.rs` / default binary)**
+
+Analyzes prime gap distributions ($p_{n+k} - p_n$) over a specified prime index interval $[n, m]$.
+
+```bash
+# Default run: k=2 (2-step gaps), all prime indices [1, ∞], using primes.parquet / gaps.parquet
+cargo run --release
+```
+
+#### **CLI Syntax & Positional Arguments**
+
+```bash
+cargo run --release -- [k] [min_idx] [max_idx] [primes_file]
+```
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `k` | `usize` | `2` | Step size $k$ for gap calculation ($p_{n+k} - p_n$) |
+| `min_idx` | `u64` | `1` | Start prime index $n$ (1-based inclusive) |
+| `max_idx` | `u64` | `u64::MAX` | End prime index $m$ (1-based inclusive) |
+| `primes_file` | `String` | `primes.parquet` | Input prime database path (or derived `gaps.parquet`) |
+
+#### **Execution Examples**
+
+```bash
+# Analyze 2-step gaps for prime indices 1 to 1,000,000
+cargo run --release -- 2 1 1000000
+
+# Analyze 4-step gaps (k=4) for primes between index 100,000 and 500,000
+cargo run --release -- 4 100000 500000
+
+# Specify a custom primes parquet database path
+cargo run --release -- 2 1 1000000 /path/to/custom_primes.parquet
+```
+
+#### **Dual Execution Engine**
+
+- ⚡ **Fast Path (`gaps.parquet` present)**: Automatically detects `gaps.parquet` and streams single-column 16-bit integers (`u16`) via `stream_gaps` with offset slicing for zero-copy high-speed analysis (~95 MB RAM).
+- 🐢 **Slow Path (`primes.parquet` fallback)**: If `gaps.parquet` is missing, streams 64-bit primes on the fly from `primes.parquet` and evaluates $k$-step gaps via sliding window combinators.
+
+### **4. Web UI Dashboard (`app.py`)**
 
 Streamlit dashboard specialized for real-time visualization of 2-step prime gap distributions ($\Delta_2(n) = p_{n+2} - p_n$, $k=2$). Queries the single-column `gaps2.parquet` database (~90 MB) with zero windowing operator overhead and zero subtractions.
 
@@ -126,7 +166,7 @@ Streamlit dashboard specialized for real-time visualization of 2-step prime gap 
 streamlit run app.py
 ```
 
-### **4. Querying with DuckDB**
+### **5. Querying with DuckDB**
 
 Because the output is standard Parquet, you can run SQL queries directly on `primes.parquet`:
 
