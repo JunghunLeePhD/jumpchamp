@@ -295,14 +295,16 @@ def render_gap_distribution_chart(df: pd.DataFrame) -> None:
     st.plotly_chart(fig, width="stretch")
 
 def render_data_table(df: pd.DataFrame) -> None:
-    """Renders tabular format data with explicit Rank indices."""
+    """Renders tabular format data fitting all rows completely without internal scrollbars."""
     display_df = df[['diff', 'frequency', 'percentage']].copy()
     display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
     display_df.columns = ['Rank', '2-Step Gap Size (Δ₂)', 'Frequency', 'Percentage']
     display_df['Frequency'] = display_df['Frequency'].map('{:,}'.format)
     display_df['Percentage'] = display_df['Percentage'].map('{:.2f}%'.format)
 
-    st.dataframe(display_df, hide_index=True, width="stretch")
+    # Calculate exact height to fit all rows without internal vertical scrolling
+    dynamic_height = (len(display_df) + 1) * 36 + 3
+    st.dataframe(display_df, hide_index=True, width="stretch", height=dynamic_height)
 
 # ============================================================================
 # 5. Main Application Orchestrator
