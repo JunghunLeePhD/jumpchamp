@@ -16,11 +16,11 @@ _db_lock = threading.Lock()
 
 @dataclass(frozen=True)
 class AppConfig:
-    gaps2_file: str
-    release_url: str
+    release_url_template: str
 
 @dataclass(frozen=True)
 class FilterParams:
+    gap_k: int
     min_idx: int
     max_idx: int
     top_n: int
@@ -34,30 +34,30 @@ class DatasetMetadata:
     unique_gaps_count: int
 
 
-
-DEFAULT_GAPS2_FILE = "gaps2.parquet"
-DEFAULT_RELEASE_URL = "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/gaps2.parquet"
+DEFAULT_RELEASE_URL_TEMPLATE = (
+    "https://github.com/JunghunLeePhD/jumpchamp/releases/download/v1.0.0/gaps{k}.parquet"
+)
 
 
 def load_config() -> AppConfig:
-    """Loads default configuration for dataset file path and remote release download URL."""
+    """Loads default configuration for dataset file path template and remote release download URL."""
     return AppConfig(
-        gaps2_file=DEFAULT_GAPS2_FILE,
-        release_url=DEFAULT_RELEASE_URL,
+        release_url_template=DEFAULT_RELEASE_URL_TEMPLATE,
     )
 
 # ============================================================================
 # 2. Asset Ingestion Layer
 # ============================================================================
 
-def ensure_dataset_exists(config: AppConfig) -> None:
-    """Validates existence of gaps2.parquet; downloads from release asset if missing/corrupt."""
-    gaps2_path = config.gaps2_file
+def ensure_dataset_exists(gap_k: int, config: AppConfig) -> str:
+    """Validates existence of gaps{k}.parquet; downloads from release asset if missing/corrupt."""
+    gaps_file = f"gaps{gap_k}.parquet"
 
-    if os.path.exists(gaps2_path) and os.path.getsize(gaps2_path) > 100_000:
-        return
+    if os.path.exists(gaps_file) and os.path.getsize(gaps_file) > 100_000:
+        return gaps_file
 
-    st.info(f"📦 2-Step Gap Database (`{gaps2_path}`) not found locally. Fetching remote storage (~90 MB)...")
+    release_url = config.release_url_template.format(k=gap_k)
+    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_file}`) not found locally. Fetching remote storage (~2048 MB)...")
     progress_bar = st.progress(0.0)
     status_text = st.empty()
 
@@ -71,22 +71,23 @@ def ensure_dataset_exists(config: AppConfig) -> None:
             )
 
     try:
-        urllib.request.urlretrieve(config.release_url, gaps2_path, reporthook=_download_callback)
+        urllib.request.urlretrieve(release_url, gaps_file, reporthook=_download_callback)
         progress_bar.empty()
         status_text.empty()
-        st.success("✅ Download complete! Initializing database engine...")
+        st.success(f"✅ Download complete! Initializing database engine for {gap_k}-step gaps...")
         st.rerun()
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
-        if os.path.exists(gaps2_path):
-            os.remove(gaps2_path)
+        if os.path.exists(gaps_file):
+            os.remove(gaps_file)
         st.error(
-            f"❌ Database (`{gaps2_path}`) not found locally and could not be fetched from remote storage.\n\n"
-            f"Please run `cargo run --release --bin build_gaps2` to generate `{gaps2_path}` locally.\n\n"
+            f"❌ Database (`{gaps_file}`) not found locally and could not be fetched from remote storage.\n\n"
+            f"Please run `cargo run --release --bin build_gaps -- {gap_k}` to generate `{gaps_file}` locally.\n\n"
             f"Error details: {e}"
         )
         st.stop()
+    return gaps_file
 
 # ============================================================================
 # 3. Database Engine & Query Layer (DuckDB)
@@ -100,8 +101,8 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
     return conn
 
 @st.cache_data(show_spinner=False)
-def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps2_file: str) -> DatasetMetadata:
-    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{gaps2_file}'").fetchone()
+def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_file: str) -> DatasetMetadata:
+    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{gaps_file}'").fetchone()
     return DatasetMetadata(
         min_idx=int(meta[0]),
         max_idx=int(meta[1]),
@@ -112,10 +113,10 @@ def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps2_file: str) ->
 @st.cache_data(show_spinner=False)
 def query_prime_gaps(
     _conn: duckdb.DuckDBPyConnection,
-    gaps2_file: str,
+    gaps_file: str,
     params: FilterParams,
 ) -> pd.DataFrame:
-    """Queries 2-step gap (k=2) frequency distribution by prime index range [min_idx, max_idx].
+    """Queries k-step gap frequency distribution by prime index range [min_idx, max_idx].
     
     Zero windowing, zero subtractions: direct single-column row offset slice & GROUP BY.
     """
@@ -124,7 +125,7 @@ def query_prime_gaps(
 
     query = f"""
     WITH sliced AS (
-        SELECT deltak FROM '{gaps2_file}'
+        SELECT deltak FROM '{gaps_file}'
         LIMIT {limit_count} OFFSET {offset}
     )
     SELECT deltak AS diff, COUNT(*) AS frequency
@@ -178,30 +179,37 @@ def inject_sticky_navbar_css() -> None:
 
 
 
-def render_math_definitions() -> None:
-    """Renders LaTeX mathematical explanations for 2-step prime gap size."""
+def render_math_definitions(gap_k: int = 2) -> None:
+    """Renders LaTeX mathematical explanations for k-step prime gap size."""
+    subscript = str(gap_k)
+    intervening = gap_k - 1
     with st.expander("📖 Mathematical Definitions & Notation", expanded=False):
         st.markdown(
-            r"""
-            Let $p_n$ denote the $n$-th prime number in sequence ($p_1 = 2, p_2 = 3, p_3 = 5, \dots$).
+            f"""
+            Let $p_n$ denote the $n$-th prime number in sequence ($p_1 = 2, p_2 = 3, p_3 = 5, \\dots$).
 
-            * **2-Step Gap ($\Delta_2$):** The arithmetic difference between primes separated by one intervening prime:
-              $$\Delta_2(n) = p_{n+2} - p_n$$
+            * **{gap_k}-Step Gap ($\Delta_{{{subscript}}}$):** The arithmetic difference between primes separated by {intervening} intervening prime(s):
+              $$\Delta_{{{subscript}}}(n) = p_{{n+{gap_k}}} - p_n$$
             * **Prime Index ($n$):** Filters are applied to prime sequence numbers $n$ to $m$ ($p_n$ to $p_m$).
             """
         )
 
 def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) -> FilterParams:
     """Renders sticky top control bar without an Apply button, updating live on parameter changes."""
-    default_max = min(meta.max_idx, 1_000_000)
+    default_max = min(meta.max_idx, 100_000_000)
 
-    # Initialize state variables
+    # Initialize / validate state variables
     if "min_idx_val" not in st.session_state:
         st.session_state.min_idx_val = meta.min_idx
+    else:
+        st.session_state.min_idx_val = max(meta.min_idx, min(st.session_state.min_idx_val, meta.max_idx - 1))
+
     if "max_idx_val" not in st.session_state:
         st.session_state.max_idx_val = default_max
-    if "slider_bounds" not in st.session_state:
-        st.session_state.slider_bounds = (st.session_state.min_idx_val, st.session_state.max_idx_val)
+    else:
+        st.session_state.max_idx_val = min(meta.max_idx, max(st.session_state.max_idx_val, st.session_state.min_idx_val + 1))
+
+    st.session_state.slider_bounds = (st.session_state.min_idx_val, st.session_state.max_idx_val)
 
     # Sync callbacks
     def sync_from_slider():
@@ -215,9 +223,19 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
         st.session_state.max_idx_val = max_v
         st.session_state.slider_bounds = (min_v, max_v)
 
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1.1, 1.1, 2.2])
+    col1, col2, col3, col4, col5, col6 = st.columns([0.9, 1.0, 0.9, 1.1, 1.1, 2.2])
 
     with col1:
+        gap_k = st.selectbox(
+            "Step Size (k)",
+            options=[2, 3],
+            index=0,
+            key="gap_k_val",
+            disabled=is_processing,
+            help="Select k for k-step gap calculation: Δ_k(n) = p_{n+k} - p_n"
+        )
+
+    with col2:
         sort_by = st.selectbox(
             "Sort Order",
             options=["Frequency", "Gap Size"],
@@ -226,7 +244,7 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
             help="'Frequency' sorts descending by count; 'Gap Size' orders numerically along the X-axis."
         )
 
-    with col2:
+    with col3:
         top_n = st.number_input(
             "Top N Gaps",
             min_value=5,
@@ -237,7 +255,7 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
             help=f"Select top N gaps to display (Total unique gap sizes in dataset: {meta.unique_gaps_count})"
         )
 
-    with col3:
+    with col4:
         st.number_input(
             "Min Index (n)",
             min_value=meta.min_idx,
@@ -248,7 +266,7 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
             disabled=is_processing
         )
 
-    with col4:
+    with col5:
         st.number_input(
             "Max Index (m)",
             min_value=meta.min_idx + 1,
@@ -259,7 +277,7 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
             disabled=is_processing
         )
 
-    with col5:
+    with col6:
         st.slider(
             "Prime Index Range (n to m)",
             min_value=meta.min_idx,
@@ -270,27 +288,32 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
         )
 
     return FilterParams(
+        gap_k=int(gap_k),
         min_idx=int(st.session_state.min_idx_val),
         max_idx=int(st.session_state.max_idx_val),
         top_n=int(top_n),
         sort_by=sort_by
     )
 
-def render_gap_distribution_chart(df: pd.DataFrame) -> None:
+def render_gap_distribution_chart(df: pd.DataFrame, gap_k: int = 2) -> None:
     """Renders clean Plotly bar chart maintaining the DataFrame's sorted order."""
+    subscript_map = {2: "₂", 3: "₃"}
+    sub_char = subscript_map.get(gap_k, f"_{gap_k}")
+    gap_label = f"{gap_k}-Step Gap Size (Δ{sub_char})"
+
     fig = px.bar(
         df,
         x="diff_label",
         y="frequency",
         text="percentage",
-        labels={"diff_label": "2-Step Gap Size (Δ₂)", "frequency": "Frequency"},
+        labels={"diff_label": gap_label, "frequency": "Frequency"},
         hover_data={"diff_label": True, "frequency": ":,", "percentage": ":.2f%"},
         color="frequency",
         color_continuous_scale="Viridis"
     )
     fig.update_traces(texttemplate='%{text}%', textposition='outside')
     fig.update_layout(
-        xaxis_title="2-Step Gap Size (Δ₂)",
+        xaxis_title=gap_label,
         yaxis_title="Frequency Count",
         showlegend=False,
         height=420,
@@ -301,11 +324,15 @@ def render_gap_distribution_chart(df: pd.DataFrame) -> None:
 
     st.plotly_chart(fig, width="stretch")
 
-def render_data_table(df: pd.DataFrame) -> None:
+def render_data_table(df: pd.DataFrame, gap_k: int = 2) -> None:
     """Renders tabular format data fitting all rows completely without internal scrollbars."""
+    subscript_map = {2: "₂", 3: "₃"}
+    sub_char = subscript_map.get(gap_k, f"_{gap_k}")
+    gap_label = f"{gap_k}-Step Gap Size (Δ{sub_char})"
+
     display_df = df[['diff', 'frequency', 'percentage']].copy()
     display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
-    display_df.columns = ['Rank', '2-Step Gap Size (Δ₂)', 'Frequency', 'Percentage']
+    display_df.columns = ['Rank', gap_label, 'Frequency', 'Percentage']
     display_df['Frequency'] = display_df['Frequency'].map('{:,}'.format)
     display_df['Percentage'] = display_df['Percentage'].map('{:.2f}%'.format)
 
@@ -318,21 +345,22 @@ def render_data_table(df: pd.DataFrame) -> None:
 # ============================================================================
 
 def main():
-    st.set_page_config(page_title="2-Step Prime Gap Explorer", page_icon="🦀", layout="wide")
+    gap_k = st.session_state.get("gap_k_val", 2)
+    st.set_page_config(page_title=f"{gap_k}-Step Prime Gap Explorer", page_icon="🦀", layout="wide")
 
     # 1. Inject Sticky Navbar CSS
     inject_sticky_navbar_css()
 
     # 2. Config & Data File Verification
     config = load_config()
-    ensure_dataset_exists(config)
+    gaps_file = ensure_dataset_exists(gap_k, config)
 
     # 3. Connection & Metadata
     conn = get_db_connection()
-    metadata = fetch_dataset_metadata(conn, config.gaps2_file)
+    metadata = fetch_dataset_metadata(conn, gaps_file)
 
     # 4. Mathematical Definitions & Sticky Control Bar
-    render_math_definitions()
+    render_math_definitions(gap_k)
     
     is_processing = st.session_state.get("is_processing", False)
     params = render_top_filter_bar(metadata, is_processing=is_processing)
@@ -341,7 +369,7 @@ def main():
     st.session_state["is_processing"] = True
     try:
         with st.spinner("Executing DuckDB query & rendering visualisations..."):
-            raw_df = query_prime_gaps(conn, config.gaps2_file, params)
+            raw_df = query_prime_gaps(conn, gaps_file, params)
 
             if raw_df.empty:
                 st.warning("No prime pairs found in the selected index range.")
@@ -350,8 +378,8 @@ def main():
             df = process_gap_dataframe(raw_df, params.sort_by)
 
             # 6. Vertical Layout: Chart followed by Data Table
-            render_gap_distribution_chart(df)
-            render_data_table(df)
+            render_gap_distribution_chart(df, params.gap_k)
+            render_data_table(df, params.gap_k)
     finally:
         st.session_state["is_processing"] = False
 
