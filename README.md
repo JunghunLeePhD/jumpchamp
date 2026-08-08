@@ -105,7 +105,7 @@ Compression Ratio:  1.31 bytes/prime
 
 ### **2. Building Pre-Computed Gap Databases (`build_gaps`)**
 
-Pre-computes $k$-step prime gaps ($\Delta_k(n) = p_{n+k} - p_n$) as a **single-column `deltak: u16` Parquet file** (`gaps{k}.parquet`, ~90 MB).
+Pre-computes $k$-step prime gaps ($\Delta_k(n) = p_{n+k} - p_n$) as a **single-column `deltak: u16` Parquet file** (`gaps{k}.parquet`, ~2048 MB).
 
 ```bash
 # Default (k=2): Builds gaps2.parquet
@@ -162,13 +162,18 @@ cargo run --release -- 2 1 1000000 --force
 - ⚡ **Fast Path (`gaps{k}.parquet` / `gaps.parquet` present)**: Default mode. Streams single-column 16-bit integers (`u16`) via `stream_gaps` with offset slicing for zero-copy high-speed analysis (~95 MB RAM).
 - 🐢 **Slow Path (`--force` flag)**: Triggered when `--force` (or `-f`) is supplied. Streams 64-bit primes on the fly from `primes.parquet` and evaluates $k$-step gaps via sliding window combinators.
 
-### **4. Web UI Dashboard (`app.py`)**
+### **4. Web UI Dashboards (`app2.py` & `app3.py`)**
 
-Streamlit dashboard specialized for real-time visualization of $k$-step prime gap distributions ($\Delta_k(n) = p_{n+k} - p_n$, $k \in [2, 3, 6]$). Dynamically loads single-column Parquet databases (`gaps{k}.parquet`, ~2048 MB) with zero windowing operator overhead and zero subtractions.
+Dedicated Streamlit dashboards specialized for real-time visualization of 2-step ($\Delta_2$) and 3-step ($\Delta_3$) prime gap distributions. Each application loads its respective single-column Parquet database (`gaps2.parquet` or `gaps3.parquet`) with zero windowing operator overhead and zero subtractions.
 
 ```bash
-streamlit run app.py
+# Run 2-Step Prime Gap Explorer (k=2)
+streamlit run app2.py
+
+# Run 3-Step Prime Gap Explorer (k=3)
+streamlit run app3.py
 ```
+
 
 
 ### **5. Querying with DuckDB**
