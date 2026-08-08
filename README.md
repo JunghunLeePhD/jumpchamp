@@ -164,11 +164,12 @@ cargo run --release -- 2 1 1000000 --force
 
 ### **4. Web UI Dashboard (`app.py`)**
 
-Streamlit dashboard specialized for real-time visualization of 2-step prime gap distributions ($\Delta_2(n) = p_{n+2} - p_n$, $k=2$). Queries the single-column `gaps2.parquet` database (~90 MB) with zero windowing operator overhead and zero subtractions.
+Streamlit dashboard specialized for real-time visualization of $k$-step prime gap distributions ($\Delta_k(n) = p_{n+k} - p_n$, $k \in [2, 3, 6]$). Dynamically loads single-column Parquet databases (`gaps{k}.parquet`, ~2048 MB) with zero windowing operator overhead and zero subtractions.
 
 ```bash
 streamlit run app.py
 ```
+
 
 ### **5. Querying with DuckDB**
 
