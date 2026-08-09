@@ -1,3 +1,4 @@
+import concurrent.futures
 import os
 import threading
 import time
@@ -53,58 +54,83 @@ def load_config(gap_k: int) -> AppConfig:
 # 2. Asset Ingestion Layer
 # ============================================================================
 
+def _download_part(download_url: str, part_file: str, start_byte: int, end_byte: int, progress_callback) -> None:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Range": f"bytes={start_byte}-{end_byte}",
+    }
+    req = urllib.request.Request(download_url, headers=headers)
+    with urllib.request.urlopen(req, timeout=60) as response, open(part_file, "wb") as out_file:
+        block_size = 2 * 1024 * 1024  # 2MB chunk
+        while True:
+            chunk = response.read(block_size)
+            if not chunk:
+                break
+            out_file.write(chunk)
+            progress_callback(len(chunk))
+
 def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
-    """Validates existence of gaps{k}.parquet; downloads from release asset with resumable downloads if missing."""
+    """Validates existence of gaps{k}.parquet; downloads from release asset using 8 parallel threads if missing."""
     gaps_path = config.gaps_file
 
     if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
         return
 
-    temp_path = f".{gaps_path}.tmp"
-    existing_bytes = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
-
-    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) missing or incomplete. Downloading remote release dataset (~660 MB)...")
+    st.info(f"⚡ {gap_k}-Step Gap Database (`{gaps_path}`) missing or incomplete. Parallel downloading remote release dataset (~660 MB)...")
     progress_bar = st.progress(0.0)
     status_text = st.empty()
 
-    def _update_progress(current: int, total: int):
-        if total > 0:
-            percent = min(1.0, current / total)
+    download_url = resolve_direct_url(config.release_url)
+    
+    # Obtain total file size
+    try:
+        req = urllib.request.Request(download_url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            total_bytes = int(resp.headers.get("Content-Length", 0))
+    except Exception:
+        total_bytes = 0
+
+    if total_bytes < 100_000_000:
+        total_bytes = 666_000_000  # Default fallback size estimate
+
+    num_workers = 8
+    segment_size = total_bytes // num_workers
+    part_files = [f".{gaps_path}.part_{i}" for i in range(num_workers)]
+    temp_path = f".{gaps_path}.tmp"
+
+    downloaded_lock = threading.Lock()
+    total_downloaded = 0
+
+    def _on_chunk(chunk_len: int):
+        nonlocal total_downloaded
+        with downloaded_lock:
+            total_downloaded += chunk_len
+            percent = min(1.0, total_downloaded / total_bytes)
             progress_bar.progress(percent)
             status_text.text(
-                f"Downloading `{gaps_path}`: {current / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB ({int(percent * 100)}%)"
+                f"⚡ Parallel Download (`{gaps_path}` - 8 Workers): {total_downloaded / (1024*1024):.1f} MB / {total_bytes / (1024*1024):.1f} MB ({int(percent * 100)}%)"
             )
 
     try:
-        download_url = resolve_direct_url(config.release_url)
-        headers = {"User-Agent": "Mozilla/5.0"}
-        if existing_bytes > 0:
-            headers["Range"] = f"bytes={existing_bytes}-"
+        futures = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            for i in range(num_workers):
+                start_b = i * segment_size
+                end_b = total_bytes - 1 if i == num_workers - 1 else (i + 1) * segment_size - 1
+                futures.append(
+                    executor.submit(_download_part, download_url, part_files[i], start_b, end_b, _on_chunk)
+                )
+            
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
-        req = urllib.request.Request(download_url, headers=headers)
-
-        with urllib.request.urlopen(req, timeout=60) as response:
-            status_code = response.getcode()
-            content_length = int(response.headers.get("Content-Length", 0))
-
-            if status_code == 206:  # HTTP 206 Partial Content
-                total_bytes = existing_bytes + content_length
-                mode = "ab"
-                downloaded = existing_bytes
-            else:  # HTTP 200 OK
-                total_bytes = content_length
-                mode = "wb"
-                downloaded = 0
-
-            with open(temp_path, mode) as out_file:
-                block_size = 4 * 1024 * 1024  # 4MB chunks
-                while True:
-                    chunk = response.read(block_size)
-                    if not chunk:
-                        break
-                    out_file.write(chunk)
-                    downloaded += len(chunk)
-                    _update_progress(downloaded, total_bytes)
+        status_text.text(f"🧩 Assembling dataset parts into `{gaps_path}`...")
+        with open(temp_path, "wb") as out_file:
+            for part_f in part_files:
+                if os.path.exists(part_f):
+                    with open(part_f, "rb") as pf:
+                        out_file.write(pf.read())
+                    os.remove(part_f)
 
         progress_bar.empty()
         status_text.empty()
@@ -114,18 +140,20 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
             st.success("✅ Download complete! Initializing database engine...")
             st.rerun()
         else:
-            downloaded_mb = os.path.getsize(temp_path) / (1024 * 1024) if os.path.exists(temp_path) else 0
-            raise RuntimeError(f"Download incomplete ({downloaded_mb:.1f} MB fetched). Please refresh the page to resume.")
+            raise RuntimeError("Assembled dataset file is incomplete or corrupted.")
 
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
-        current_sz = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
-        current_mb = current_sz / (1024 * 1024)
+        for pf in part_files:
+            if os.path.exists(pf):
+                os.remove(pf)
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
         st.error(
-            f"❌ Database (`{gaps_path}`) download interrupted ({current_mb:.1f} MB downloaded so far).\n\n"
+            f"❌ Database (`{gaps_path}`) parallel download failed.\n\n"
             f"**Error details:** {e}\n\n"
-            f"💡 **To fix this:** Refresh the page to automatically resume the download from {current_mb:.1f} MB, or build locally with `cargo run --release --bin build_gaps -- {gap_k}`."
+            f"💡 **To fix this:** Refresh the page to retry parallel download, or build locally with `cargo run --release --bin build_gaps -- {gap_k}`."
         )
         st.stop()
 
