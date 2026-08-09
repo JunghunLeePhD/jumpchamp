@@ -2,7 +2,7 @@
 // Sidebar Panel — User Controls & Data Selection
 // ============================================================================
 
-use crate::gui::state::{AppState, ChartMode, SortOrder};
+use crate::gui::state::{AppState, SortOrder};
 
 pub enum SidebarAction {
     None,
@@ -46,14 +46,11 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     ui.separator();
 
     ui.heading("📊 Display");
-    ui.horizontal(|ui| {
-        ui.selectable_value(&mut state.chart_mode, ChartMode::Histogram, "Histogram");
-        ui.selectable_value(&mut state.chart_mode, ChartMode::Scatter, "Scatter");
-    });
     ui.add(egui::Slider::new(&mut state.top_n, 5..=200).text("Top N gaps"));
     ui.label("Sort order:");
     ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Frequency");
     ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap Size");
+
 
     ui.separator();
 

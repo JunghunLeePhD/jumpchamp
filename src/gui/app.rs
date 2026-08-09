@@ -65,8 +65,8 @@ impl App for JumpChampApp {
             match result {
                 WorkerResult::Metadata(m) => self.state.metadata = Some(m),
                 WorkerResult::FrequencyData(f) => self.state.freq_data = f,
-                WorkerResult::ScatterData(s) => self.state.scatter_data = s,
                 WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
+
                 WorkerResult::Progress(p) => {
                     self.state.progress = p;
                     if p >= 1.0 {

@@ -10,13 +10,8 @@ pub enum SortOrder {
     ByGapSize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ChartMode {
-    Histogram,
-    Scatter,
-}
-
 #[derive(Debug, Clone)]
+
 pub struct DatasetMetadata {
     pub total_rows: u64,
     pub unique_gaps: u64,
@@ -25,7 +20,6 @@ pub struct DatasetMetadata {
 }
 
 pub enum WorkerCommand {
-
     LoadParquet {
         path: String,
         min_idx: u64,
@@ -41,7 +35,6 @@ pub enum WorkerResult {
 
     Metadata(DatasetMetadata),
     FrequencyData(Vec<(u64, u64)>),
-    ScatterData(Vec<[f64; 2]>),
     QueryLatency(f64),
     Progress(f32),
     Error(String),
@@ -55,12 +48,10 @@ pub struct AppState {
     pub max_idx: u64,
     pub top_n: usize,
     pub sort_by: SortOrder,
-    pub chart_mode: ChartMode,
 
     // Data
     pub metadata: Option<DatasetMetadata>,
     pub freq_data: Vec<(u64, u64)>,
-    pub scatter_data: Vec<[f64; 2]>,
     pub query_latency_ms: Option<f64>,
 
     // Worker Status
@@ -82,11 +73,9 @@ impl AppState {
             max_idx: 1_000_000,
             top_n: 20,
             sort_by: SortOrder::ByFrequency,
-            chart_mode: ChartMode::Histogram,
 
             metadata: None,
             freq_data: Vec::new(),
-            scatter_data: Vec::new(),
             query_latency_ms: None,
 
             is_loading: false,
@@ -98,5 +87,6 @@ impl AppState {
         }
     }
 }
+
 
 

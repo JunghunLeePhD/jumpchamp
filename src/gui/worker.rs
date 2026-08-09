@@ -9,7 +9,6 @@ use arrow_array::UInt16Array;
 use crossbeam_channel::{Receiver, Sender};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use crate::gui::lttb;
 use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
 
 pub fn spawn_worker(
@@ -88,12 +87,8 @@ fn run_load(
         0
     };
 
-    // Optimization 1: Stack L1 primitive array for 1-cycle counts (fits in 512KB L1/L2 CPU cache)
+    // Stack L1 primitive array for 1-cycle counts (fits in 512KB L1/L2 CPU cache)
     let mut counts = vec![0u64; 65536];
-
-    // Strided sampling for LTTB scatter plot (max 10,000 points)
-    let stride = (total_to_read / 10_000).max(1);
-    let mut raw_pairs: Vec<[f64; 2]> = Vec::with_capacity((total_to_read / stride).min(10_000) as usize);
 
     let start_idx = min_idx.saturating_sub(1);
     let end_idx = start_idx + total_to_read;
@@ -103,7 +98,7 @@ fn run_load(
 
     let start_time = std::time::Instant::now();
 
-    // Optimization 2: Zero-copy direct Arrow buffer slice processing (SIMD vectorizable)
+    // Zero-copy direct Arrow buffer slice processing (SIMD vectorizable)
     for batch_result in reader {
         if cancel_flag.load(Ordering::SeqCst) {
             return Ok(());
@@ -129,16 +124,8 @@ fn run_load(
             let slice = &values[slice_start..slice_end];
 
             for &gap in slice {
-                let curr_n = start_idx + read_count + 1;
-
                 // 1-cycle L1 primitive array count
                 counts[gap as usize] += 1;
-
-                // Strided scatter sampling
-                if read_count % stride == 0 {
-                    raw_pairs.push([curr_n as f64, gap as f64]);
-                }
-
                 read_count += 1;
 
                 if read_count % 500_000 == 0 && total_to_read > 0 {
@@ -171,11 +158,6 @@ fn run_load(
     freq_vec.truncate(top_n);
 
     res_tx.send(WorkerResult::FrequencyData(freq_vec)).ok();
-
-
-    // Instant LTTB downsampling (<1ms)
-    let downsampled = lttb::downsample(&raw_pairs, 2_000);
-    res_tx.send(WorkerResult::ScatterData(downsampled)).ok();
     res_tx.send(WorkerResult::QueryLatency(elapsed_ms)).ok();
     res_tx.send(WorkerResult::Progress(1.0)).ok();
     ctx.request_repaint();

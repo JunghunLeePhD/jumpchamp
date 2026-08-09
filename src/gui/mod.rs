@@ -3,7 +3,6 @@
 // ============================================================================
 
 pub mod app;
-pub mod lttb;
 pub mod panels;
 pub mod state;
 pub mod theme;
