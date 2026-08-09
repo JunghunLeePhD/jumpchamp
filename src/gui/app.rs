@@ -93,15 +93,15 @@ impl App for JumpChampApp {
             });
         });
 
-        egui::SidePanel::left("sidebar")
-            .resizable(true)
-            .min_width(260.0)
+        egui::TopBottomPanel::top("control_bar")
+            .resizable(false)
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
                 SidebarAction::Load => self.dispatch_load(),
                 SidebarAction::Cancel => self.dispatch_cancel(),
                 SidebarAction::OpenFilePicker => self.open_file_picker(),
                 SidebarAction::None => {}
             });
+
 
         egui::CentralPanel::default().show(ctx, |ui| {
             chart::render(ui, &self.state);
