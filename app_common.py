@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 import urllib.request
 from dataclasses import dataclass
 
@@ -376,6 +377,28 @@ def render_data_table(df: pd.DataFrame, gap_k: int = 2) -> None:
     dynamic_height = (len(display_df) + 1) * 36 + 3
     st.dataframe(display_df, hide_index=True, width="stretch", height=dynamic_height)
 
+def render_telemetry_bar(dataset_target: str, range_count: int, elapsed_sec: float) -> None:
+    """Renders real-time telemetry info for dataset engine, network usage, and latency."""
+    is_remote = dataset_target.startswith("http://") or dataset_target.startswith("https://")
+
+    if is_remote:
+        engine_label = "🌐 Remote DuckDB HTTPS Stream (Zero-Copy)"
+        # Parquet u16 deltak compressed size ~ 0.2 bytes per row
+        est_transfer_mb = max(0.06, (range_count * 0.2) / (1024 * 1024))
+        transfer_str = f"~{est_transfer_mb:.2f} MB"
+    else:
+        engine_label = "⚡ Local SSD File Path"
+        transfer_str = "0.00 MB (100% Offline)"
+
+    st.markdown("---")
+    col1, col2, col3 = st.columns([2, 1.5, 1])
+    with col1:
+        st.caption(f"**Engine Mode:** {engine_label}")
+    with col2:
+        st.caption(f"**Est. Data Transfer:** `{transfer_str}`")
+    with col3:
+        st.caption(f"**Query Latency:** `{elapsed_sec * 1000:.1f} ms`")
+
 # ============================================================================
 # 5. Main Application Orchestrator
 # ============================================================================
@@ -400,7 +423,9 @@ def run_app(gap_k: int) -> None:
     st.session_state["is_processing"] = True
     try:
         with st.spinner("Executing DuckDB query & rendering visualisations..."):
+            t0 = time.perf_counter()
             raw_df = query_prime_gaps(conn, dataset_target, params)
+            elapsed_sec = time.perf_counter() - t0
 
             if raw_df.empty:
                 st.warning("No prime pairs found in the selected index range.")
@@ -410,5 +435,8 @@ def run_app(gap_k: int) -> None:
 
             render_gap_distribution_chart(df, gap_k)
             render_data_table(df, gap_k)
+
+            range_count = params.max_idx - params.min_idx + 1
+            render_telemetry_bar(dataset_target, range_count, elapsed_sec)
     finally:
         st.session_state["is_processing"] = False
