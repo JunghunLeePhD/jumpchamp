@@ -23,9 +23,15 @@ impl JumpChampApp {
 
         spawn_worker(cmd_rx, res_tx, cc.egui_ctx.clone());
 
-        Self {
+        let mut app = Self {
             state: AppState::new(cmd_tx, res_rx),
+        };
+
+        if std::path::Path::new(&app.state.file_path).exists() {
+            app.dispatch_load();
         }
+
+        app
     }
 
     fn dispatch_load(&mut self) {
@@ -44,6 +50,18 @@ impl JumpChampApp {
         self.state.cmd_tx.send(cmd).ok();
     }
 
+    fn dispatch_generate_database(&mut self) {
+        self.state.is_loading = true;
+        self.state.progress = 0.0;
+        self.state.error_msg = None;
+
+        let cmd = WorkerCommand::GenerateDatabase {
+            limit: 10_000_000,
+            k: self.state.k,
+        };
+        self.state.cmd_tx.send(cmd).ok();
+    }
+
     fn dispatch_cancel(&mut self) {
         self.state.cmd_tx.send(WorkerCommand::Cancel).ok();
         self.state.is_loading = false;
@@ -55,6 +73,7 @@ impl JumpChampApp {
             .pick_file()
         {
             self.state.file_path = path.to_string_lossy().into_owned();
+            self.dispatch_load();
         }
     }
 }
@@ -99,6 +118,7 @@ impl App for JumpChampApp {
                 SidebarAction::Load => self.dispatch_load(),
                 SidebarAction::Cancel => self.dispatch_cancel(),
                 SidebarAction::OpenFilePicker => self.open_file_picker(),
+                SidebarAction::GenerateDatabase => self.dispatch_generate_database(),
                 SidebarAction::None => {}
             });
 

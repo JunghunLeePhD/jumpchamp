@@ -9,6 +9,7 @@ pub enum SidebarAction {
     Load,
     Cancel,
     OpenFilePicker,
+    GenerateDatabase,
 }
 
 fn render_dual_range_slider(
@@ -103,10 +104,25 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             action = SidebarAction::OpenFilePicker;
         }
 
+        let file_exists = std::path::Path::new(&state.file_path).exists();
+        if !file_exists {
+            if ui
+                .button(egui::RichText::new("⚙️ Generate Local DB").strong().color(egui::Color32::from_rgb(90, 200, 250)))
+                .on_hover_text("Generate prime & gap database (10M primes) directly in app data directory")
+                .clicked()
+            {
+                action = SidebarAction::GenerateDatabase;
+            }
+        }
+
         ui.separator();
         // Group 2: Sort Order (Right next to File option)
-        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq");
-        ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap");
+        if ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq").changed() {
+            action = SidebarAction::Load;
+        }
+        if ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap").changed() {
+            action = SidebarAction::Load;
+        }
 
         ui.separator();
         // Group 3: Clean Index Range (No text clutter)
@@ -128,7 +144,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         ui.separator();
         // Group 4: Clean Top N Slider (No text label)
-        ui.add_sized([70.0_f32, 18.0_f32], egui::Slider::new(&mut state.top_n, 5..=200));
+        if ui.add_sized([70.0_f32, 18.0_f32], egui::Slider::new(&mut state.top_n, 5..=200)).changed() {
+            action = SidebarAction::Load;
+        }
 
         ui.separator();
         // Group 5: Action Button / Progress Bar (Strict 1 Line)

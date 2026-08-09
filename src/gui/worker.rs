@@ -1,7 +1,4 @@
-// ============================================================================
-// High-Performance Background Worker Thread for Zero-Copy Parquet Analytics
-// ============================================================================
-
+use std::collections::VecDeque;
 use std::fs::File;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -9,7 +6,11 @@ use arrow_array::UInt16Array;
 use crossbeam_channel::{Receiver, Sender};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
+use crate::analysis::stream_primes;
+use crate::config::{default_gaps_path, default_primes_path};
 use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
+use crate::sieve::{small_primes, stream_prime_blocks_range};
+use crate::storage::{gaps_parquet::GapsSink, ParquetPrimeSink};
 
 pub fn spawn_worker(
     cmd_rx: Receiver<WorkerCommand>,
@@ -23,6 +24,32 @@ pub fn spawn_worker(
             match cmd_rx.recv() {
                 Ok(WorkerCommand::Cancel) => {
                     cancel_flag.store(true, Ordering::SeqCst);
+                }
+                Ok(WorkerCommand::GenerateDatabase { limit, k }) => {
+                    cancel_flag.store(false, Ordering::SeqCst);
+                    if let Err(err) = run_generate_database(
+                        limit,
+                        k,
+                        &res_tx,
+                        &ctx,
+                        &cancel_flag,
+                    ) {
+                        res_tx.send(WorkerResult::Error(err.to_string())).ok();
+                        ctx.request_repaint();
+                    } else {
+                        let path = default_gaps_path(k).to_string_lossy().into_owned();
+                        let _ = run_load(
+                            &path,
+                            1,
+                            1_000_000,
+                            k,
+                            20,
+                            SortOrder::ByFrequency,
+                            &res_tx,
+                            &ctx,
+                            &cancel_flag,
+                        );
+                    }
                 }
                 Ok(WorkerCommand::LoadParquet {
                     path,
@@ -52,6 +79,97 @@ pub fn spawn_worker(
             }
         }
     })
+}
+
+fn run_generate_database(
+    limit: usize,
+    k: usize,
+    res_tx: &Sender<WorkerResult>,
+    ctx: &egui::Context,
+    cancel_flag: &AtomicBool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let primes_path = default_primes_path();
+    let gaps_path = default_gaps_path(k);
+    let block_size = 10_000_000;
+
+    let tmp_primes = primes_path.with_extension("parquet.tmp");
+    let tmp_gaps = gaps_path.with_extension("parquet.tmp");
+    let tmp_primes_str = tmp_primes.to_str().unwrap_or("primes.parquet.tmp");
+    let tmp_gaps_str = tmp_gaps.to_str().unwrap_or("gaps2.parquet.tmp");
+
+    // Phase 1: Generate Primes (Progress 0.0 -> 0.5)
+    let sqrt_limit = (limit as f64).sqrt() as usize;
+    let base_primes = small_primes(sqrt_limit);
+    let base_u64: Vec<u64> = base_primes.iter().map(|&p| p as u64).collect();
+
+    let mut prime_sink = ParquetPrimeSink::create(tmp_primes_str).map_err(|e| e.to_string())?;
+    prime_sink.write_batch(&base_u64).map_err(|e| e.to_string())?;
+    let mut total_primes_written = base_primes.len();
+
+    let start_val = sqrt_limit + 1;
+    if start_val <= limit {
+        for block in stream_prime_blocks_range(start_val, limit, block_size, &base_primes) {
+            if cancel_flag.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            total_primes_written += block.len();
+            prime_sink.write_batch(&block).map_err(|e| e.to_string())?;
+
+            let prog = 0.5 * (total_primes_written as f32 / (limit as f32 / (limit as f32).ln()));
+            res_tx.send(WorkerResult::Progress(prog.min(0.48))).ok();
+            ctx.request_repaint();
+        }
+    }
+    prime_sink.finish().map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp_primes, &primes_path)?;
+
+    res_tx.send(WorkerResult::Progress(0.5)).ok();
+    ctx.request_repaint();
+
+    // Phase 2: Compute Gaps (Progress 0.5 -> 1.0)
+    let file = File::open(&primes_path)?;
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+
+    let mut gaps_sink = GapsSink::create(tmp_gaps_str).map_err(|e| e.to_string())?;
+    let primes_iter = stream_primes(reader);
+
+    let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
+    let mut batch: Vec<u16> = Vec::with_capacity(1_000_000);
+    let mut gap_count = 0u64;
+
+    for p in primes_iter {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        window.push_back(p);
+        if window.len() == k + 1 {
+            let p_n = window.pop_front().unwrap();
+            let deltak = (p - p_n) as u16;
+            batch.push(deltak);
+            gap_count += 1;
+
+            if batch.len() == 1_000_000 {
+                gaps_sink.write_batch(&batch).map_err(|e| e.to_string())?;
+                batch.clear();
+
+                let prog = 0.5 + 0.5 * (gap_count as f32 / total_primes_written as f32);
+                res_tx.send(WorkerResult::Progress(prog.min(0.98))).ok();
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    if !batch.is_empty() {
+        gaps_sink.write_batch(&batch).map_err(|e| e.to_string())?;
+    }
+
+    gaps_sink.finish().map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp_gaps, &gaps_path)?;
+
+    res_tx.send(WorkerResult::Progress(1.0)).ok();
+    ctx.request_repaint();
+
+    Ok(())
 }
 
 fn run_load(
@@ -152,10 +270,16 @@ fn run_load(
         .collect();
 
     match sort_by {
-        SortOrder::ByFrequency => freq_vec.sort_by(|a, b| b.1.cmp(&a.1)),
-        SortOrder::ByGapSize => freq_vec.sort_by_key(|&(g, _)| g),
+        SortOrder::ByFrequency => {
+            freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+            freq_vec.truncate(top_n);
+        }
+        SortOrder::ByGapSize => {
+            freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+            freq_vec.truncate(top_n);
+            freq_vec.sort_by_key(|&(g, _)| g);
+        }
     }
-    freq_vec.truncate(top_n);
 
     res_tx.send(WorkerResult::FrequencyData(freq_vec)).ok();
     res_tx.send(WorkerResult::QueryLatency(elapsed_ms)).ok();

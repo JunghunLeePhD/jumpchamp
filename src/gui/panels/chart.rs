@@ -11,8 +11,9 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
     let total_f64 = total_count.max(1) as f64;
     let max_count = state
         .freq_data
-        .first()
+        .iter()
         .map(|&(_, cnt)| cnt)
+        .max()
         .unwrap_or(1)
         .max(1) as f64;
 
