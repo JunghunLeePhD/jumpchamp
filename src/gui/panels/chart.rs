@@ -24,9 +24,12 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
     let layer_id = ui.layer_id();
 
     Plot::new("histogram")
-        .height(ui.available_height() - 4.0)
+        .width(ui.available_width())
+        .height(ui.available_height() - 2.0)
+        .set_margin_fraction(egui::Vec2::ZERO) // Fill 100% width and height without edge padding
         .y_axis_label("Probability P(Δ_k) [0, 1]")
         .show_grid(false) // Disable automatic grid to eliminate negative grid lines
+
         .show_x(false)    // Hide default X-axis line & tick numbers
         .show_y(false)    // Hide default Y-axis cursor line frequency text
         .show_axes([false, false]) // Remove all axis ticks and tick numbers
@@ -34,11 +37,13 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
         .include_x(-0.5)
         .include_x(bars_len - 0.5)
         .include_y(-max_prob * 0.06)
-        .include_y(max_prob * 1.02)   // Top of tallest bar aligns with top edge of window frame
-        .allow_zoom([true, false])    // Lock vertical height, zoom horizontally only
-        .allow_drag([true, false])    // Lock vertical height, pan horizontally only
-        .allow_scroll(true)
+        .include_y(max_prob * 1.12)   // Headroom margin so top percentage labels are never cut off
+
+        .allow_zoom([false, false])   // Permanent 100% full-width and full-height framing lock
+        .allow_drag([false, false])   // Prevent canvas drag drift out of bounds
+        .allow_scroll(false)
         .label_formatter(|_, _| String::new()) // Suppress default built-in plot hover line text
+
 
         .show(ui, |plot_ui| {
             // Detect hovered bar index in plot space
