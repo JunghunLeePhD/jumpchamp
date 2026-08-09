@@ -53,63 +53,77 @@ def load_config(gap_k: int) -> AppConfig:
 # ============================================================================
 
 def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
-    """Validates existence of gaps{k}.parquet; downloads from release asset if missing/corrupt."""
+    """Validates existence of gaps{k}.parquet; downloads from release asset with resumable downloads if missing."""
     gaps_path = config.gaps_file
 
-    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000:
+    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
         return
 
-    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) not found locally. Fetching remote storage...")
+    temp_path = f".{gaps_path}.tmp"
+    existing_bytes = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+
+    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) missing or incomplete. Fetching remote release dataset (~660 MB)...")
     progress_bar = st.progress(0.0)
     status_text = st.empty()
 
-    temp_path = f".{gaps_path}.tmp"
-
-    def _download_callback(block_num: int, block_size: int, total_size: int):
-        downloaded = block_num * block_size
-        if total_size > 0:
-            percent = min(1.0, downloaded / total_size)
+    def _update_progress(current: int, total: int):
+        if total > 0:
+            percent = min(1.0, current / total)
             progress_bar.progress(percent)
             status_text.text(
-                f"Downloading: {downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({int(percent * 100)}%)"
+                f"Downloading `{gaps_path}`: {current / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB ({int(percent * 100)}%)"
             )
 
     try:
-        req = urllib.request.Request(config.release_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req) as response, open(temp_path, "wb") as out_file:
-            total_size = int(response.headers.get("Content-Length", 0))
-            downloaded = 0
-            block_size = 1024 * 1024  # 1MB chunks
-            block_num = 0
-            while True:
-                chunk = response.read(block_size)
-                if not chunk:
-                    break
-                out_file.write(chunk)
-                downloaded += len(chunk)
-                block_num += 1
-                _download_callback(block_num, block_size, total_size)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if existing_bytes > 0:
+            headers["Range"] = f"bytes={existing_bytes}-"
+
+        req = urllib.request.Request(config.release_url, headers=headers)
+
+        with urllib.request.urlopen(req, timeout=60) as response:
+            status_code = response.getcode()
+            content_length = int(response.headers.get("Content-Length", 0))
+
+            if status_code == 206:  # HTTP 206 Partial Content
+                total_bytes = existing_bytes + content_length
+                mode = "ab"
+                downloaded = existing_bytes
+            else:  # HTTP 200 OK
+                total_bytes = content_length
+                mode = "wb"
+                downloaded = 0
+
+            with open(temp_path, mode) as out_file:
+                block_size = 4 * 1024 * 1024  # 4MB chunks
+                while True:
+                    chunk = response.read(block_size)
+                    if not chunk:
+                        break
+                    out_file.write(chunk)
+                    downloaded += len(chunk)
+                    _update_progress(downloaded, total_bytes)
 
         progress_bar.empty()
         status_text.empty()
 
-        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 100_000:
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 100_000_000:
             os.replace(temp_path, gaps_path)
             st.success("✅ Download complete! Initializing database engine...")
             st.rerun()
         else:
-            raise RuntimeError("Downloaded file is empty or corrupted.")
+            downloaded_mb = os.path.getsize(temp_path) / (1024 * 1024) if os.path.exists(temp_path) else 0
+            raise RuntimeError(f"Download incomplete ({downloaded_mb:.1f} MB fetched). Please refresh the page to resume.")
+
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        if os.path.exists(gaps_path) and os.path.getsize(gaps_path) <= 100_000:
-            os.remove(gaps_path)
+        current_sz = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+        current_mb = current_sz / (1024 * 1024)
         st.error(
-            f"❌ Database (`{gaps_path}`) not found locally and could not be fetched from remote storage.\n\n"
-            f"Please run `cargo run --release --bin build_gaps -- {gap_k}` to generate `{gaps_path}` locally.\n\n"
-            f"Error details: {e}"
+            f"❌ Database (`{gaps_path}`) download interrupted ({current_mb:.1f} MB downloaded so far).\n\n"
+            f"**Error details:** {e}\n\n"
+            f"💡 **To fix this:** Refresh the page to automatically resume the download from {current_mb:.1f} MB, or build locally with `cargo run --release --bin build_gaps -- {gap_k}`."
         )
         st.stop()
 
