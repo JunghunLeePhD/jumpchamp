@@ -127,6 +127,13 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
         )
         st.stop()
 
+def resolve_dataset_path(gap_k: int, config: AppConfig) -> str:
+    """Returns local dataset path if present; otherwise returns remote HTTPS release URL for zero-download DuckDB streaming."""
+    gaps_path = config.gaps_file
+    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000:
+        return gaps_path
+    return config.release_url
+
 # ============================================================================
 # 3. Database Engine & Query Layer (DuckDB)
 # ============================================================================
@@ -136,14 +143,19 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect()
     conn.sql("SET max_memory = '1GB';")
     conn.sql("SET threads = 2;")
+    try:
+        conn.sql("INSTALL httpfs; LOAD httpfs;")
+    except Exception:
+        pass
     return conn
 
 @st.cache_data(show_spinner=False)
-def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_file: str) -> DatasetMetadata:
-    if not os.path.exists(gaps_file) or os.path.getsize(gaps_file) <= 100_000:
-        st.error(f"❌ Dataset file `{gaps_file}` is missing or corrupted.")
-        st.stop()
-    escaped_path = gaps_file.replace("'", "''")
+def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_target: str) -> DatasetMetadata:
+    if not (gaps_target.startswith("http://") or gaps_target.startswith("https://")):
+        if not os.path.exists(gaps_target) or os.path.getsize(gaps_target) <= 100_000:
+            st.error(f"❌ Dataset file `{gaps_target}` is missing or corrupted.")
+            st.stop()
+    escaped_path = gaps_target.replace("'", "''")
     meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{escaped_path}'").fetchone()
     return DatasetMetadata(
         min_idx=int(meta[0]),
@@ -155,17 +167,18 @@ def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_file: str) -> 
 @st.cache_data(show_spinner=False)
 def query_prime_gaps(
     _conn: duckdb.DuckDBPyConnection,
-    gaps_file: str,
+    gaps_target: str,
     params: FilterParams,
 ) -> pd.DataFrame:
     """Queries k-step gap frequency distribution by prime index range [min_idx, max_idx]."""
-    if not os.path.exists(gaps_file) or os.path.getsize(gaps_file) <= 100_000:
-        st.error(f"❌ Dataset file `{gaps_file}` is missing or corrupted.")
-        st.stop()
+    if not (gaps_target.startswith("http://") or gaps_target.startswith("https://")):
+        if not os.path.exists(gaps_target) or os.path.getsize(gaps_target) <= 100_000:
+            st.error(f"❌ Dataset file `{gaps_target}` is missing or corrupted.")
+            st.stop()
 
     offset = params.min_idx - 1
     limit_count = params.max_idx - params.min_idx + 1
-    escaped_path = gaps_file.replace("'", "''")
+    escaped_path = gaps_target.replace("'", "''")
 
     query = f"""
     WITH sliced AS (
@@ -374,10 +387,10 @@ def run_app(gap_k: int) -> None:
     inject_sticky_navbar_css()
 
     config = load_config(gap_k)
-    ensure_dataset_exists(gap_k, config)
+    dataset_target = resolve_dataset_path(gap_k, config)
 
     conn = get_db_connection()
-    metadata = fetch_dataset_metadata(conn, config.gaps_file)
+    metadata = fetch_dataset_metadata(conn, dataset_target)
 
     render_math_definitions(gap_k)
 
@@ -387,7 +400,7 @@ def run_app(gap_k: int) -> None:
     st.session_state["is_processing"] = True
     try:
         with st.spinner("Executing DuckDB query & rendering visualisations..."):
-            raw_df = query_prime_gaps(conn, config.gaps_file, params)
+            raw_df = query_prime_gaps(conn, dataset_target, params)
 
             if raw_df.empty:
                 st.warning("No prime pairs found in the selected index range.")
