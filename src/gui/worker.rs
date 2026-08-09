@@ -10,7 +10,7 @@ use crossbeam_channel::{Receiver, Sender};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 use crate::gui::lttb;
-use crate::gui::state::{DatasetMetadata, SortOrder, TableRow, WorkerCommand, WorkerResult};
+use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
 
 pub fn spawn_worker(
     cmd_rx: Receiver<WorkerCommand>,
@@ -91,11 +91,7 @@ fn run_load(
     // Optimization 1: Stack L1 primitive array for 1-cycle counts (fits in 512KB L1/L2 CPU cache)
     let mut counts = vec![0u64; 65536];
 
-    // Memory Cap 1: Limit table preview memory to 2,000 rows max
-    let max_table_preview = 2_000usize;
-    let mut table_rows: Vec<TableRow> = Vec::with_capacity(total_to_read.min(max_table_preview as u64) as usize);
-
-    // Memory Cap 2: Strided sampling for LTTB scatter plot (max 10,000 points)
+    // Strided sampling for LTTB scatter plot (max 10,000 points)
     let stride = (total_to_read / 10_000).max(1);
     let mut raw_pairs: Vec<[f64; 2]> = Vec::with_capacity((total_to_read / stride).min(10_000) as usize);
 
@@ -138,11 +134,6 @@ fn run_load(
                 // 1-cycle L1 primitive array count
                 counts[gap as usize] += 1;
 
-                // Preview table
-                if table_rows.len() < max_table_preview {
-                    table_rows.push(TableRow { n: curr_n, gap });
-                }
-
                 // Strided scatter sampling
                 if read_count % stride == 0 {
                     raw_pairs.push([curr_n as f64, gap as f64]);
@@ -180,7 +171,7 @@ fn run_load(
     freq_vec.truncate(top_n);
 
     res_tx.send(WorkerResult::FrequencyData(freq_vec)).ok();
-    res_tx.send(WorkerResult::TableData(table_rows)).ok();
+
 
     // Instant LTTB downsampling (<1ms)
     let downsampled = lttb::downsample(&raw_pairs, 2_000);

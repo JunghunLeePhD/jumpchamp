@@ -5,7 +5,7 @@
 use crossbeam_channel::unbounded;
 use eframe::App;
 
-use crate::gui::panels::{chart, sidebar, table, sidebar::SidebarAction};
+use crate::gui::panels::{chart, sidebar, sidebar::SidebarAction};
 use crate::gui::state::{AppState, WorkerCommand, WorkerResult};
 use crate::gui::theme::apply_theme;
 use crate::gui::worker::spawn_worker;
@@ -66,7 +66,6 @@ impl App for JumpChampApp {
                 WorkerResult::Metadata(m) => self.state.metadata = Some(m),
                 WorkerResult::FrequencyData(f) => self.state.freq_data = f,
                 WorkerResult::ScatterData(s) => self.state.scatter_data = s,
-                WorkerResult::TableData(t) => self.state.table_rows = t,
                 WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
                 WorkerResult::Progress(p) => {
                     self.state.progress = p;
@@ -91,8 +90,6 @@ impl App for JumpChampApp {
                     .map(|ms| format!("{:.1} ms", ms))
                     .unwrap_or_else(|| "-- ms".to_string());
                 ui.label(format!("⏱️ Query Latency: {}", latency_str));
-                ui.separator();
-                ui.label(format!("📊 Preview Rows: {}", self.state.table_rows.len()));
             });
         });
 
@@ -107,15 +104,9 @@ impl App for JumpChampApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::TopBottomPanel::top("chart_panel")
-                .resizable(true)
-                .min_height(300.0)
-                .show_inside(ui, |ui| {
-                    chart::render(ui, &self.state);
-                });
-
-            table::render(ui, &mut self.state);
+            chart::render(ui, &self.state);
         });
+
 
         if let Some(err) = self.state.error_msg.clone() {
             egui::Window::new("Error").show(ctx, |ui| {

@@ -24,13 +24,8 @@ pub struct DatasetMetadata {
     pub max_gap: u16,
 }
 
-#[derive(Debug, Clone)]
-pub struct TableRow {
-    pub n: u64,
-    pub gap: u16,
-}
-
 pub enum WorkerCommand {
+
     LoadParquet {
         path: String,
         min_idx: u64,
@@ -43,10 +38,10 @@ pub enum WorkerCommand {
 }
 
 pub enum WorkerResult {
+
     Metadata(DatasetMetadata),
     FrequencyData(Vec<(u64, u64)>),
     ScatterData(Vec<[f64; 2]>),
-    TableData(Vec<TableRow>),
     QueryLatency(f64),
     Progress(f32),
     Error(String),
@@ -61,13 +56,11 @@ pub struct AppState {
     pub top_n: usize,
     pub sort_by: SortOrder,
     pub chart_mode: ChartMode,
-    pub gap_filter: String,
 
     // Data
     pub metadata: Option<DatasetMetadata>,
     pub freq_data: Vec<(u64, u64)>,
     pub scatter_data: Vec<[f64; 2]>,
-    pub table_rows: Vec<TableRow>,
     pub query_latency_ms: Option<f64>,
 
     // Worker Status
@@ -90,12 +83,10 @@ impl AppState {
             top_n: 20,
             sort_by: SortOrder::ByFrequency,
             chart_mode: ChartMode::Histogram,
-            gap_filter: String::new(),
 
             metadata: None,
             freq_data: Vec::new(),
             scatter_data: Vec::new(),
-            table_rows: Vec::new(),
             query_latency_ms: None,
 
             is_loading: false,
@@ -107,4 +98,5 @@ impl AppState {
         }
     }
 }
+
 

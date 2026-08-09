@@ -16,6 +16,5 @@ parquet = { version = "53.0", features = ["arrow"] }
 eframe = "0.30"
 egui = "0.30"
 egui_plot = "0.30"
-egui_extras = "0.30"
 crossbeam-channel = "0.5"
 rfd = "0.15"

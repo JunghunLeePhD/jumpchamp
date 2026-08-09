@@ -4,4 +4,3 @@
 
 pub mod chart;
 pub mod sidebar;
-pub mod table;
