@@ -17,14 +17,14 @@ fn render_dual_range_slider(
     max_val: &mut u64,
     limit: u64,
 ) -> egui::Response {
-    let desired_size = egui::vec2(220.0, 20.0);
+    let desired_size = egui::vec2(150.0, 18.0);
     let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::drag());
 
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let track_y = rect.center().y;
-        let track_left = rect.min.x + 8.0;
-        let track_right = rect.max.x - 8.0;
+        let track_left = rect.min.x + 6.0;
+        let track_right = rect.max.x - 6.0;
         let track_width = (track_right - track_left).max(1.0);
         let max_lim = limit.max(1) as f32;
 
@@ -70,7 +70,7 @@ fn render_dual_range_slider(
         }
 
         // 4. Draw Min Thumb (Left Button Handle)
-        let thumb_r = 7.0_f32;
+        let thumb_r = 6.0_f32;
         let min_circle = egui::pos2(x_min, track_y);
         painter.circle_filled(min_circle, thumb_r, egui::Color32::from_rgb(220, 225, 235));
         painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(90, 200, 250)));
@@ -79,7 +79,6 @@ fn render_dual_range_slider(
         let max_circle = egui::pos2(x_max, track_y);
         painter.circle_filled(max_circle, thumb_r, egui::Color32::from_rgb(90, 200, 250));
         painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
-
     }
 
     response.on_hover_text(format!("Index Range n: {} ~ {}", min_val, max_val))
@@ -94,18 +93,23 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         .map(|m| m.total_rows)
         .unwrap_or(10_000_000);
 
-    ui.add_space(4.0);
-    ui.horizontal_wrapped(|ui| {
-        // Group 1: Dataset
+    ui.add_space(2.0);
+    // Non-wrapping single horizontal line container
+    ui.horizontal(|ui| {
+        // Group 1: Dataset File Picker
         ui.label("📂 File:");
-        ui.add(egui::TextEdit::singleline(&mut state.file_path).desired_width(180.0));
+        ui.add(egui::TextEdit::singleline(&mut state.file_path).desired_width(120.0));
         if ui.button("…").on_hover_text("Browse for .parquet file").clicked() {
             action = SidebarAction::OpenFilePicker;
         }
 
         ui.separator();
-        // Group 2: Single-Track Dual-Thumb Range Slider + Manual Numeric Inputs
-        ui.label("n range:");
+        // Group 2: Sort Order (Right next to File option)
+        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq");
+        ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap");
+
+        ui.separator();
+        // Group 3: Clean Index Range (No text clutter)
         if ui.add(egui::DragValue::new(&mut state.min_idx).speed(100_000)).changed() {
             state.min_idx = state.min_idx.clamp(1, max_limit);
             if state.min_idx > state.max_idx {
@@ -122,26 +126,26 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             }
         }
 
-        ui.label(format!("({} ~ {})", state.min_idx, state.max_idx));
+        ui.separator();
+        // Group 4: Clean Top N Slider (No text label)
+        ui.add_sized([70.0_f32, 18.0_f32], egui::Slider::new(&mut state.top_n, 5..=200));
 
         ui.separator();
-        // Group 3: Display Settings
-        ui.add(egui::Slider::new(&mut state.top_n, 5..=200).text("Top N"));
-        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq");
-        ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap");
-
-        ui.separator();
-        // Action Button / Progress
+        // Group 5: Action Button / Progress Bar (Strict 1 Line)
         if state.is_loading {
-            ui.add(egui::ProgressBar::new(state.progress).show_percentage());
-            if ui.button("⬛ Cancel").clicked() {
+            ui.add_sized(
+                [80.0_f32, 18.0_f32],
+                egui::ProgressBar::new(state.progress).show_percentage(),
+            );
+            if ui.button("✖ Cancel").clicked() {
                 action = SidebarAction::Cancel;
             }
-        } else if ui.button("▶ Load / Query").clicked() {
+        } else if ui.button("▶ Load").clicked() {
             action = SidebarAction::Load;
         }
+
     });
-    ui.add_space(4.0);
+    ui.add_space(2.0);
 
     action
 }
