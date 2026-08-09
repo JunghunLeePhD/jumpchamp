@@ -59,9 +59,11 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
     if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000:
         return
 
-    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) not found locally. Fetching remote storage (~2048 MB)...")
+    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) not found locally. Fetching remote storage...")
     progress_bar = st.progress(0.0)
     status_text = st.empty()
+
+    temp_path = f".{gaps_path}.tmp"
 
     def _download_callback(block_num: int, block_size: int, total_size: int):
         downloaded = block_num * block_size
@@ -73,15 +75,36 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
             )
 
     try:
-        urllib.request.urlretrieve(config.release_url, gaps_path, reporthook=_download_callback)
+        req = urllib.request.Request(config.release_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req) as response, open(temp_path, "wb") as out_file:
+            total_size = int(response.headers.get("Content-Length", 0))
+            downloaded = 0
+            block_size = 1024 * 1024  # 1MB chunks
+            block_num = 0
+            while True:
+                chunk = response.read(block_size)
+                if not chunk:
+                    break
+                out_file.write(chunk)
+                downloaded += len(chunk)
+                block_num += 1
+                _download_callback(block_num, block_size, total_size)
+
         progress_bar.empty()
         status_text.empty()
-        st.success("✅ Download complete! Initializing database engine...")
-        st.rerun()
+
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 100_000:
+            os.replace(temp_path, gaps_path)
+            st.success("✅ Download complete! Initializing database engine...")
+            st.rerun()
+        else:
+            raise RuntimeError("Downloaded file is empty or corrupted.")
     except Exception as e:
         progress_bar.empty()
         status_text.empty()
-        if os.path.exists(gaps_path):
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        if os.path.exists(gaps_path) and os.path.getsize(gaps_path) <= 100_000:
             os.remove(gaps_path)
         st.error(
             f"❌ Database (`{gaps_path}`) not found locally and could not be fetched from remote storage.\n\n"
@@ -103,7 +126,11 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
 
 @st.cache_data(show_spinner=False)
 def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_file: str) -> DatasetMetadata:
-    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{gaps_file}'").fetchone()
+    if not os.path.exists(gaps_file) or os.path.getsize(gaps_file) <= 100_000:
+        st.error(f"❌ Dataset file `{gaps_file}` is missing or corrupted.")
+        st.stop()
+    escaped_path = gaps_file.replace("'", "''")
+    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{escaped_path}'").fetchone()
     return DatasetMetadata(
         min_idx=int(meta[0]),
         max_idx=int(meta[1]),
@@ -118,12 +145,17 @@ def query_prime_gaps(
     params: FilterParams,
 ) -> pd.DataFrame:
     """Queries k-step gap frequency distribution by prime index range [min_idx, max_idx]."""
+    if not os.path.exists(gaps_file) or os.path.getsize(gaps_file) <= 100_000:
+        st.error(f"❌ Dataset file `{gaps_file}` is missing or corrupted.")
+        st.stop()
+
     offset = params.min_idx - 1
     limit_count = params.max_idx - params.min_idx + 1
+    escaped_path = gaps_file.replace("'", "''")
 
     query = f"""
     WITH sliced AS (
-        SELECT deltak FROM '{gaps_file}'
+        SELECT deltak FROM '{escaped_path}'
         LIMIT {limit_count} OFFSET {offset}
     )
     SELECT deltak AS diff, COUNT(*) AS frequency
