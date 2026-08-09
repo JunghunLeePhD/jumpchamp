@@ -128,10 +128,64 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
         )
         st.stop()
 
+_active_download_threads: set[int] = set()
+_download_thread_lock = threading.Lock()
+
+def _background_download_worker(gap_k: int, config: AppConfig) -> None:
+    gaps_path = config.gaps_file
+    temp_path = f".{gaps_path}.tmp"
+    try:
+        existing_bytes = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if existing_bytes > 0:
+            headers["Range"] = f"bytes={existing_bytes}-"
+
+        req = urllib.request.Request(config.release_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=120) as response:
+            status_code = response.getcode()
+            mode = "ab" if status_code == 206 else "wb"
+            with open(temp_path, mode) as out_file:
+                block_size = 8 * 1024 * 1024  # 8MB chunks
+                while True:
+                    chunk = response.read(block_size)
+                    if not chunk:
+                        break
+                    out_file.write(chunk)
+
+        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 100_000_000:
+            os.replace(temp_path, gaps_path)
+    except Exception:
+        pass
+    finally:
+        with _download_thread_lock:
+            _active_download_threads.discard(gap_k)
+
+def trigger_background_download(gap_k: int, config: AppConfig) -> None:
+    """Launches non-blocking background thread to download gaps{k}.parquet to local disk."""
+    gaps_path = config.gaps_file
+    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
+        return
+
+    with _download_thread_lock:
+        if gap_k in _active_download_threads:
+            return
+        _active_download_threads.add(gap_k)
+
+    thread = threading.Thread(
+        target=_background_download_worker,
+        args=(gap_k, config),
+        daemon=True,
+    )
+    thread.start()
+
+def is_background_downloading(gap_k: int) -> bool:
+    with _download_thread_lock:
+        return gap_k in _active_download_threads
+
 def resolve_dataset_path(gap_k: int, config: AppConfig) -> str:
     """Returns local dataset path if present; otherwise returns remote HTTPS release URL for zero-download DuckDB streaming."""
     gaps_path = config.gaps_file
-    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000:
+    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
         return gaps_path
     return config.release_url
 
@@ -377,21 +431,25 @@ def render_data_table(df: pd.DataFrame, gap_k: int = 2) -> None:
     dynamic_height = (len(display_df) + 1) * 36 + 3
     st.dataframe(display_df, hide_index=True, width="stretch", height=dynamic_height)
 
-def render_telemetry_bar(dataset_target: str, range_count: int, elapsed_sec: float) -> None:
+def render_telemetry_bar(gap_k: int, dataset_target: str, range_count: int, elapsed_sec: float) -> None:
     """Renders real-time telemetry info for dataset engine, network usage, and latency."""
     is_remote = dataset_target.startswith("http://") or dataset_target.startswith("https://")
+    is_downloading = is_background_downloading(gap_k)
 
     if is_remote:
-        engine_label = "🌐 Remote DuckDB HTTPS Stream (Zero-Copy)"
+        if is_downloading:
+            engine_label = "🌐 Remote HTTPS Stream (⏬ Caching to SSD in background...)"
+        else:
+            engine_label = "🌐 Remote DuckDB HTTPS Stream (Zero-Copy)"
         # Parquet u16 deltak compressed size ~ 0.2 bytes per row
         est_transfer_mb = max(0.06, (range_count * 0.2) / (1024 * 1024))
         transfer_str = f"~{est_transfer_mb:.2f} MB"
     else:
-        engine_label = "⚡ Local SSD File Path"
+        engine_label = "⚡ Local SSD File Path (Sub-10ms Speed)"
         transfer_str = "0.00 MB (100% Offline)"
 
     st.markdown("---")
-    col1, col2, col3 = st.columns([2, 1.5, 1])
+    col1, col2, col3 = st.columns([2.2, 1.5, 1])
     with col1:
         st.caption(f"**Engine Mode:** {engine_label}")
     with col2:
@@ -411,6 +469,10 @@ def run_app(gap_k: int) -> None:
 
     config = load_config(gap_k)
     dataset_target = resolve_dataset_path(gap_k, config)
+
+    # Hybrid Dual-Engine: If running remote stream, trigger non-blocking background download to local disk
+    if dataset_target.startswith("http://") or dataset_target.startswith("https://"):
+        trigger_background_download(gap_k, config)
 
     conn = get_db_connection()
     metadata = fetch_dataset_metadata(conn, dataset_target)
@@ -437,6 +499,6 @@ def run_app(gap_k: int) -> None:
             render_data_table(df, gap_k)
 
             range_count = params.max_idx - params.min_idx + 1
-            render_telemetry_bar(dataset_target, range_count, elapsed_sec)
+            render_telemetry_bar(gap_k, dataset_target, range_count, elapsed_sec)
     finally:
         st.session_state["is_processing"] = False
