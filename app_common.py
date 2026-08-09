@@ -63,7 +63,7 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
     temp_path = f".{gaps_path}.tmp"
     existing_bytes = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
 
-    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) missing or incomplete. Fetching remote release dataset (~660 MB)...")
+    st.info(f"📦 {gap_k}-Step Gap Database (`{gaps_path}`) missing or incomplete. Downloading remote release dataset (~660 MB)...")
     progress_bar = st.progress(0.0)
     status_text = st.empty()
 
@@ -76,11 +76,12 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
             )
 
     try:
+        download_url = resolve_direct_url(config.release_url)
         headers = {"User-Agent": "Mozilla/5.0"}
         if existing_bytes > 0:
             headers["Range"] = f"bytes={existing_bytes}-"
 
-        req = urllib.request.Request(config.release_url, headers=headers)
+        req = urllib.request.Request(download_url, headers=headers)
 
         with urllib.request.urlopen(req, timeout=60) as response:
             status_code = response.getcode()
@@ -128,66 +129,22 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
         )
         st.stop()
 
-_active_download_threads: set[int] = set()
-_download_thread_lock = threading.Lock()
-
-def _background_download_worker(gap_k: int, config: AppConfig) -> None:
-    gaps_path = config.gaps_file
-    temp_path = f".{gaps_path}.tmp"
+@st.cache_data(ttl=3600, show_spinner=False)
+def resolve_direct_url(url: str) -> str:
+    """Resolves HTTP 302 redirects to obtain direct S3/GitHub Object storage URL supporting HTTP Range requests."""
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return url
     try:
-        existing_bytes = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
-        headers = {"User-Agent": "Mozilla/5.0"}
-        if existing_bytes > 0:
-            headers["Range"] = f"bytes={existing_bytes}-"
-
-        req = urllib.request.Request(config.release_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=120) as response:
-            status_code = response.getcode()
-            mode = "ab" if status_code == 206 else "wb"
-            with open(temp_path, mode) as out_file:
-                block_size = 8 * 1024 * 1024  # 8MB chunks
-                while True:
-                    chunk = response.read(block_size)
-                    if not chunk:
-                        break
-                    out_file.write(chunk)
-
-        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 100_000_000:
-            os.replace(temp_path, gaps_path)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.geturl()
     except Exception:
-        pass
-    finally:
-        with _download_thread_lock:
-            _active_download_threads.discard(gap_k)
-
-def trigger_background_download(gap_k: int, config: AppConfig) -> None:
-    """Launches non-blocking background thread to download gaps{k}.parquet to local disk."""
-    gaps_path = config.gaps_file
-    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
-        return
-
-    with _download_thread_lock:
-        if gap_k in _active_download_threads:
-            return
-        _active_download_threads.add(gap_k)
-
-    thread = threading.Thread(
-        target=_background_download_worker,
-        args=(gap_k, config),
-        daemon=True,
-    )
-    thread.start()
-
-def is_background_downloading(gap_k: int) -> bool:
-    with _download_thread_lock:
-        return gap_k in _active_download_threads
-
-def resolve_dataset_path(gap_k: int, config: AppConfig) -> str:
-    """Returns local dataset path if present; otherwise returns remote HTTPS release URL for zero-download DuckDB streaming."""
-    gaps_path = config.gaps_file
-    if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
-        return gaps_path
-    return config.release_url
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.geturl()
+        except Exception:
+            return url
 
 # ============================================================================
 # 3. Database Engine & Query Layer (DuckDB)
@@ -211,13 +168,21 @@ def fetch_dataset_metadata(_conn: duckdb.DuckDBPyConnection, gaps_target: str) -
             st.error(f"❌ Dataset file `{gaps_target}` is missing or corrupted.")
             st.stop()
     escaped_path = gaps_target.replace("'", "''")
-    meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM '{escaped_path}'").fetchone()
-    return DatasetMetadata(
-        min_idx=int(meta[0]),
-        max_idx=int(meta[1]),
-        total_count=int(meta[2]),
-        unique_gaps_count=int(meta[3]),
-    )
+    try:
+        meta = _conn.sql(f"SELECT 1, COUNT(*), COUNT(*), COUNT(DISTINCT deltak) FROM read_parquet('{escaped_path}')").fetchone()
+        return DatasetMetadata(
+            min_idx=int(meta[0]),
+            max_idx=int(meta[1]),
+            total_count=int(meta[2]),
+            unique_gaps_count=int(meta[3]),
+        )
+    except Exception as e:
+        st.error(
+            f"❌ Unable to connect or query dataset (`{gaps_target}`).\n\n"
+            f"**Details:** {e}\n\n"
+            f"💡 *If running on Streamlit Cloud, please refresh the page to retry or resume background caching.*"
+        )
+        st.stop()
 
 @st.cache_data(show_spinner=False)
 def query_prime_gaps(
@@ -237,7 +202,7 @@ def query_prime_gaps(
 
     query = f"""
     WITH sliced AS (
-        SELECT deltak FROM '{escaped_path}'
+        SELECT deltak FROM read_parquet('{escaped_path}')
         LIMIT {limit_count} OFFSET {offset}
     )
     SELECT deltak AS diff, COUNT(*) AS frequency
@@ -247,8 +212,16 @@ def query_prime_gaps(
     LIMIT {params.top_n};
     """
 
-    with _db_lock:
-        return _conn.sql(query).df()
+    try:
+        with _db_lock:
+            return _conn.sql(query).df()
+    except Exception as e:
+        st.error(
+            f"❌ Query execution failed on dataset (`{gaps_target}`).\n\n"
+            f"**Details:** {e}\n\n"
+            f"💡 *If running on Streamlit Cloud, please refresh the page to retry or resume background caching.*"
+        )
+        st.stop()
 
 def process_gap_dataframe(df: pd.DataFrame, sort_by: str) -> pd.DataFrame:
     """Calculates percentages and applies selected sorting order."""
@@ -431,17 +404,12 @@ def render_data_table(df: pd.DataFrame, gap_k: int = 2) -> None:
     dynamic_height = (len(display_df) + 1) * 36 + 3
     st.dataframe(display_df, hide_index=True, width="stretch", height=dynamic_height)
 
-def render_telemetry_bar(gap_k: int, dataset_target: str, range_count: int, elapsed_sec: float) -> None:
+def render_telemetry_bar(dataset_target: str, range_count: int, elapsed_sec: float) -> None:
     """Renders real-time telemetry info for dataset engine, network usage, and latency."""
     is_remote = dataset_target.startswith("http://") or dataset_target.startswith("https://")
-    is_downloading = is_background_downloading(gap_k)
 
     if is_remote:
-        if is_downloading:
-            engine_label = "🌐 Remote HTTPS Stream (⏬ Caching to SSD in background...)"
-        else:
-            engine_label = "🌐 Remote DuckDB HTTPS Stream (Zero-Copy)"
-        # Parquet u16 deltak compressed size ~ 0.2 bytes per row
+        engine_label = "🌐 Remote DuckDB HTTPS Stream (Zero-Copy)"
         est_transfer_mb = max(0.06, (range_count * 0.2) / (1024 * 1024))
         transfer_str = f"~{est_transfer_mb:.2f} MB"
     else:
@@ -468,14 +436,10 @@ def run_app(gap_k: int) -> None:
     inject_sticky_navbar_css()
 
     config = load_config(gap_k)
-    dataset_target = resolve_dataset_path(gap_k, config)
-
-    # Hybrid Dual-Engine: If running remote stream, trigger non-blocking background download to local disk
-    if dataset_target.startswith("http://") or dataset_target.startswith("https://"):
-        trigger_background_download(gap_k, config)
+    ensure_dataset_exists(gap_k, config)
 
     conn = get_db_connection()
-    metadata = fetch_dataset_metadata(conn, dataset_target)
+    metadata = fetch_dataset_metadata(conn, config.gaps_file)
 
     render_math_definitions(gap_k)
 
@@ -486,7 +450,7 @@ def run_app(gap_k: int) -> None:
     try:
         with st.spinner("Executing DuckDB query & rendering visualisations..."):
             t0 = time.perf_counter()
-            raw_df = query_prime_gaps(conn, dataset_target, params)
+            raw_df = query_prime_gaps(conn, config.gaps_file, params)
             elapsed_sec = time.perf_counter() - t0
 
             if raw_df.empty:
@@ -499,6 +463,6 @@ def run_app(gap_k: int) -> None:
             render_data_table(df, gap_k)
 
             range_count = params.max_idx - params.min_idx + 1
-            render_telemetry_bar(gap_k, dataset_target, range_count, elapsed_sec)
+            render_telemetry_bar(config.gaps_file, range_count, elapsed_sec)
     finally:
         st.session_state["is_processing"] = False
