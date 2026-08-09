@@ -4,8 +4,18 @@ version = "0.1.0"
 edition = "2021"
 default-run = "jumpchamp"   # cargo run -> analyzer (src/main.rs)
 
+[[bin]]
+name = "jumpchamp_gui"
+path = "src/bin/jumpchamp_gui.rs"
+
 [dependencies]
 rayon = "1.10"
 arrow-array = "53.0"
 arrow-schema = "53.0"
 parquet = { version = "53.0", features = ["arrow"] }
+eframe = "0.30"
+egui = "0.30"
+egui_plot = "0.30"
+egui_extras = "0.30"
+crossbeam-channel = "0.5"
+rfd = "0.15"

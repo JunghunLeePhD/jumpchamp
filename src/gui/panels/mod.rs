@@ -1,10 +1,7 @@
 // ============================================================================
-// JumpChamp Library Root — Re-exports all domain layers
+// GUI Panels Root
 // ============================================================================
 
-pub mod analysis;
-pub mod config;
-pub mod gui;
-pub mod sieve;
-pub mod storage;
-
+pub mod chart;
+pub mod sidebar;
+pub mod table;
