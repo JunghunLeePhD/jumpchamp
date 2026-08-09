@@ -52,6 +52,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap Size");
 
 
+
+
     ui.separator();
 
     if state.is_loading {

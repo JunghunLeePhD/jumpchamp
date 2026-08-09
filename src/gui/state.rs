@@ -74,6 +74,9 @@ impl AppState {
             top_n: 20,
             sort_by: SortOrder::ByFrequency,
 
+
+
+
             metadata: None,
             freq_data: Vec::new(),
             query_latency_ms: None,
