@@ -67,6 +67,7 @@ impl App for JumpChampApp {
                 WorkerResult::FrequencyData(f) => self.state.freq_data = f,
                 WorkerResult::ScatterData(s) => self.state.scatter_data = s,
                 WorkerResult::TableData(t) => self.state.table_rows = t,
+                WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
                 WorkerResult::Progress(p) => {
                     self.state.progress = p;
                     if p >= 1.0 {
@@ -79,6 +80,21 @@ impl App for JumpChampApp {
                 }
             }
         }
+
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("⚡ Engine: Zero-Copy Parquet Stream");
+                ui.separator();
+                let latency_str = self
+                    .state
+                    .query_latency_ms
+                    .map(|ms| format!("{:.1} ms", ms))
+                    .unwrap_or_else(|| "-- ms".to_string());
+                ui.label(format!("⏱️ Query Latency: {}", latency_str));
+                ui.separator();
+                ui.label(format!("📊 Preview Rows: {}", self.state.table_rows.len()));
+            });
+        });
 
         egui::SidePanel::left("sidebar")
             .resizable(true)
@@ -111,6 +127,7 @@ impl App for JumpChampApp {
         }
     }
 }
+
 
 pub fn run() -> eframe::Result<()> {
     let opts = eframe::NativeOptions {

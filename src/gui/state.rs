@@ -47,6 +47,7 @@ pub enum WorkerResult {
     FrequencyData(Vec<(u64, u64)>),
     ScatterData(Vec<[f64; 2]>),
     TableData(Vec<TableRow>),
+    QueryLatency(f64),
     Progress(f32),
     Error(String),
 }
@@ -67,6 +68,7 @@ pub struct AppState {
     pub freq_data: Vec<(u64, u64)>,
     pub scatter_data: Vec<[f64; 2]>,
     pub table_rows: Vec<TableRow>,
+    pub query_latency_ms: Option<f64>,
 
     // Worker Status
     pub is_loading: bool,
@@ -94,6 +96,7 @@ impl AppState {
             freq_data: Vec::new(),
             scatter_data: Vec::new(),
             table_rows: Vec::new(),
+            query_latency_ms: None,
 
             is_loading: false,
             progress: 0.0,
@@ -104,3 +107,4 @@ impl AppState {
         }
     }
 }
+
