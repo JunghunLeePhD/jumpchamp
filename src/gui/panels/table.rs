@@ -9,8 +9,10 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
     ui.horizontal(|ui| {
         ui.label("🔍 Filter gap =");
         ui.text_edit_singleline(&mut state.gap_filter);
-        ui.label(format!("Loaded Rows: {}", state.table_rows.len()));
+        let total_str = state.metadata.as_ref().map(|m| m.total_rows.to_string()).unwrap_or_else(|| "N/A".to_string());
+        ui.label(format!("Table Preview: {} rows (Total DB: {})", state.table_rows.len(), total_str));
     });
+
 
     let filtered: Vec<&TableRow> = if state.gap_filter.trim().is_empty() {
         state.table_rows.iter().collect()
