@@ -59,18 +59,25 @@ def _download_part(download_url: str, part_file: str, start_byte: int, end_byte:
         "User-Agent": "Mozilla/5.0",
         "Range": f"bytes={start_byte}-{end_byte}",
     }
-    req = urllib.request.Request(download_url, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as response, open(part_file, "wb") as out_file:
-        block_size = 2 * 1024 * 1024  # 2MB chunk
-        while True:
-            chunk = response.read(block_size)
-            if not chunk:
-                break
-            out_file.write(chunk)
-            progress_callback(len(chunk))
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(download_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as response, open(part_file, "wb") as out_file:
+                block_size = 1024 * 1024  # 1MB chunk
+                while True:
+                    chunk = response.read(block_size)
+                    if not chunk:
+                        break
+                    out_file.write(chunk)
+                    progress_callback(len(chunk))
+            return
+        except Exception as e:
+            if attempt == 2:
+                raise e
+            time.sleep(1)
 
 def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
-    """Validates existence of gaps{k}.parquet; downloads from release asset using 8 parallel threads if missing."""
+    """Validates existence of gaps{k}.parquet; downloads from release asset using parallel threads if missing."""
     gaps_path = config.gaps_file
 
     if os.path.exists(gaps_path) and os.path.getsize(gaps_path) > 100_000_000:
@@ -82,18 +89,23 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
 
     download_url = resolve_direct_url(config.release_url)
     
-    # Obtain total file size
+    # Obtain total file size using Range GET request to avoid S3 403 errors on HEAD requests
+    total_bytes = 0
     try:
-        req = urllib.request.Request(download_url, headers={"User-Agent": "Mozilla/5.0"}, method="HEAD")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            total_bytes = int(resp.headers.get("Content-Length", 0))
+        req = urllib.request.Request(download_url, headers={"User-Agent": "Mozilla/5.0", "Range": "bytes=0-0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content_range = resp.headers.get("Content-Range", "")  # e.g., "bytes 0-0/666483799"
+            if "/" in content_range:
+                total_bytes = int(content_range.split("/")[-1])
+            elif resp.headers.get("Content-Length"):
+                total_bytes = int(resp.headers.get("Content-Length"))
     except Exception:
-        total_bytes = 0
+        pass
 
     if total_bytes < 100_000_000:
         total_bytes = 666_000_000  # Default fallback size estimate
 
-    num_workers = 8
+    num_workers = 4  # 4 Workers for maximum stability on Streamlit Cloud
     segment_size = total_bytes // num_workers
     part_files = [f".{gaps_path}.part_{i}" for i in range(num_workers)]
     temp_path = f".{gaps_path}.tmp"
@@ -108,7 +120,7 @@ def ensure_dataset_exists(gap_k: int, config: AppConfig) -> None:
             percent = min(1.0, total_downloaded / total_bytes)
             progress_bar.progress(percent)
             status_text.text(
-                f"⚡ Parallel Download (`{gaps_path}` - 8 Workers): {total_downloaded / (1024*1024):.1f} MB / {total_bytes / (1024*1024):.1f} MB ({int(percent * 100)}%)"
+                f"⚡ Parallel Download (`{gaps_path}` - {num_workers} Workers): {total_downloaded / (1024*1024):.1f} MB / {total_bytes / (1024*1024):.1f} MB ({int(percent * 100)}%)"
             )
 
     try:
