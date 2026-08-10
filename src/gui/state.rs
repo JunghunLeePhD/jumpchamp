@@ -21,8 +21,8 @@ pub struct DatasetMetadata {
 
 pub enum WorkerCommand {
     ComputeGaps {
-        min_idx: u64,
-        max_idx: u64,
+        min_val: u64,
+        max_val: u64,
         k: usize,
         top_n: usize,
         sort_by: SortOrder,
@@ -41,8 +41,8 @@ pub enum WorkerResult {
 pub struct AppState {
     // Controls
     pub k: usize,
-    pub min_idx: u64,
-    pub max_idx: u64,
+    pub min_val: u64,
+    pub max_val: u64,
     pub top_n: usize,
     pub sort_by: SortOrder,
 
@@ -65,8 +65,8 @@ impl AppState {
     pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
         Self {
             k: 2,
-            min_idx: 1,
-            max_idx: 1_000_000,
+            min_val: 1,
+            max_val: 100_000_000_000, // Default 1e11 (100 Billion)
             top_n: 20,
             sort_by: SortOrder::ByFrequency,
 

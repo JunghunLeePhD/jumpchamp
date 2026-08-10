@@ -38,8 +38,8 @@ impl JumpChampApp {
         self.state.error_msg = None;
 
         let cmd = WorkerCommand::ComputeGaps {
-            min_idx: self.state.min_idx,
-            max_idx: self.state.max_idx,
+            min_val: self.state.min_val,
+            max_val: self.state.max_val,
             k: self.state.k,
             top_n: self.state.top_n,
             sort_by: self.state.sort_by.clone(),
@@ -77,6 +77,14 @@ impl App for JumpChampApp {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("⚡ Engine: In-Memory Parallel Segmented Sieve");
+                ui.separator();
+                ui.label(format!(
+                    "📊 Range: {} ~ {} (k={}, Top N={})",
+                    sidebar::format_compact_num(self.state.min_val),
+                    sidebar::format_compact_num(self.state.max_val),
+                    self.state.k,
+                    self.state.top_n
+                ));
                 ui.separator();
                 let latency_str = self
                     .state

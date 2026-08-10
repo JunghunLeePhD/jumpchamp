@@ -10,6 +10,20 @@ pub enum SidebarAction {
     Cancel,
 }
 
+pub fn format_compact_num(val: u64) -> String {
+    if val >= 1_000_000_000_000 {
+        format!("{:.2} T", val as f64 / 1e12)
+    } else if val >= 1_000_000_000 {
+        format!("{:.2} B", val as f64 / 1e9)
+    } else if val >= 1_000_000 {
+        format!("{:.2} M", val as f64 / 1e6)
+    } else if val >= 1_000 {
+        format!("{:.1} K", val as f64 / 1e3)
+    } else {
+        format!("{}", val)
+    }
+}
+
 fn render_dual_range_slider(
     ui: &mut egui::Ui,
     min_val: &mut u64,
@@ -25,15 +39,15 @@ fn render_dual_range_slider(
         let track_left = rect.min.x + 6.0;
         let track_right = rect.max.x - 6.0;
         let track_width = (track_right - track_left).max(1.0);
-        let max_lim = limit.max(1) as f32;
+        let max_lim = limit.max(1) as f64;
 
         let val_to_x = |v: u64| -> f32 {
-            let frac = (v as f32 / max_lim).clamp(0.0, 1.0);
+            let frac = (v as f64 / max_lim).clamp(0.0, 1.0) as f32;
             track_left + frac * track_width
         };
 
         let x_to_val = |x: f32| -> u64 {
-            let frac = ((x - track_left) / track_width).clamp(0.0, 1.0);
+            let frac = ((x - track_left) / track_width).clamp(0.0, 1.0) as f64;
             ((frac * max_lim).round() as u64).clamp(1, limit)
         };
 
@@ -68,28 +82,32 @@ fn render_dual_range_slider(
             }
         }
 
-        // 4. Draw Min Thumb (Left Button Handle)
+        // 4. Draw Min Thumb
         let thumb_r = 6.0_f32;
         let min_circle = egui::pos2(x_min, track_y);
         painter.circle_filled(min_circle, thumb_r, egui::Color32::from_rgb(220, 225, 235));
         painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(90, 200, 250)));
 
-        // 5. Draw Max Thumb (Right Button Handle)
+        // 5. Draw Max Thumb
         let max_circle = egui::pos2(x_max, track_y);
         painter.circle_filled(max_circle, thumb_r, egui::Color32::from_rgb(90, 200, 250));
         painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
     }
 
-    response.on_hover_text(format!("Index Range n: {} ~ {}", min_val, max_val))
+    response.on_hover_text(format!(
+        "Prime Numerical Range: {} ~ {} ({})",
+        format_compact_num(*min_val),
+        format_compact_num(*max_val),
+        format!("{}..{}", min_val, max_val)
+    ))
 }
 
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
 
-    let max_limit = 50_000_000u64;
+    let max_limit = 100_000_000_000u64; // 1e11 (100 Billion)
 
     ui.add_space(2.0);
-    // Non-wrapping single horizontal line container
     ui.horizontal(|ui| {
         // Group 1: Gap order k parameter
         ui.label("k:");
@@ -111,20 +129,38 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         }
 
         ui.separator();
-        // Group 3: Clean Index Range
-        if ui.add(egui::DragValue::new(&mut state.min_idx).speed(100_000)).changed() {
-            state.min_idx = state.min_idx.clamp(1, max_limit);
-            if state.min_idx > state.max_idx {
-                state.max_idx = state.min_idx;
+        // Group 3: Numerical Prime Value Range [N_min, N_max]
+        let min_speed = (state.min_val as f64 / 100.0).max(10.0);
+        if ui
+            .add(
+                egui::DragValue::new(&mut state.min_val)
+                    .speed(min_speed)
+                    .range(1..=max_limit),
+            )
+            .on_hover_text(format!("Min Prime Value N_min: {}", format_compact_num(state.min_val)))
+            .changed()
+        {
+            state.min_val = state.min_val.clamp(1, max_limit);
+            if state.min_val > state.max_val {
+                state.max_val = state.min_val;
             }
         }
 
-        render_dual_range_slider(ui, &mut state.min_idx, &mut state.max_idx, max_limit);
+        render_dual_range_slider(ui, &mut state.min_val, &mut state.max_val, max_limit);
 
-        if ui.add(egui::DragValue::new(&mut state.max_idx).speed(100_000)).changed() {
-            state.max_idx = state.max_idx.clamp(1, max_limit);
-            if state.max_idx < state.min_idx {
-                state.min_idx = state.max_idx;
+        let max_speed = (state.max_val as f64 / 100.0).max(10.0);
+        if ui
+            .add(
+                egui::DragValue::new(&mut state.max_val)
+                    .speed(max_speed)
+                    .range(1..=max_limit),
+            )
+            .on_hover_text(format!("Max Prime Value N_max: {}", format_compact_num(state.max_val)))
+            .changed()
+        {
+            state.max_val = state.max_val.clamp(1, max_limit);
+            if state.max_val < state.min_val {
+                state.min_val = state.max_val;
             }
         }
 
