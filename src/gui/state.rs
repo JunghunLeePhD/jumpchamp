@@ -52,6 +52,7 @@ pub struct AppState {
     pub max_k_limit: usize,
     pub show_grid_lines: bool,
     pub show_pct_labels: bool,
+    pub show_heatmap_meter: bool,
 
     // Data
     pub metadata: Option<DatasetMetadata>,
@@ -82,6 +83,7 @@ impl AppState {
             max_k_limit: 3,                  // Default max k limit = 3
             show_grid_lines: true,
             show_pct_labels: true,
+            show_heatmap_meter: true,
 
             metadata: None,
             freq_data: Vec::new(),

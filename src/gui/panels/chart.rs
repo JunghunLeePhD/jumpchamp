@@ -26,6 +26,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
     // Extract ctx and layer_id prior to Plot::show to avoid borrow checker conflict on ui
     let ctx = ui.ctx().clone();
     let layer_id = ui.layer_id();
+    let available_h = ui.available_height();
 
     Plot::new("histogram")
         .width(ui.available_width())
@@ -176,4 +177,96 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                 }
             }
         });
+
+    // Floating Vertical Heat Map Count Meter on the top-right side of the chart canvas
+    if state.show_heatmap_meter && !display_data.is_empty() {
+        let min_cnt = display_data.iter().map(|&(_, cnt)| cnt).min().unwrap_or(0);
+        let max_cnt = display_data.iter().map(|&(_, cnt)| cnt).max().unwrap_or(0);
+
+        // Container height matching half of the chart canvas height
+        let meter_height = ((available_h - 90.0) * 0.5).clamp(100.0, 400.0);
+
+        egui::Area::new(egui::Id::new("heatmap_count_meter"))
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 48.0))
+            .interactable(true)
+            .show(&ctx, |ui| {
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgba_unmultiplied(16, 20, 28, 230))
+                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(50, 65, 90)))
+                    .rounding(6.0_f32)
+                    .inner_margin(6.0_f32)
+                    .show(ui, |ui| {
+                        // Vertical strip + tick marks region allocation (2/3 bar width)
+                        let strip_size = egui::vec2(75.0, meter_height);
+                        let (rect, response) = ui.allocate_exact_size(strip_size, egui::Sense::hover());
+                        if ui.is_rect_visible(rect) {
+                            let painter = ui.painter();
+                            let bar_width = 9.5_f32; // 2/3 of original 14px
+                            let bar_rect = egui::Rect::from_min_max(
+                                rect.min,
+                                egui::pos2(rect.min.x + bar_width, rect.max.y),
+                            );
+
+                            // Render vertical Viridis gradient (Top = 1.0 Yellow, Bottom = 0.0 Dark Blue/Purple)
+                            let steps = 60;
+                            let step_h = bar_rect.height() / steps as f32;
+                            for i in 0..steps {
+                                let t = 1.0 - (i as f64 / (steps - 1) as f64);
+                                let color = viridis_color(t);
+                                let y0 = bar_rect.min.y + i as f32 * step_h;
+                                let y1 = (y0 + step_h + 0.5).min(bar_rect.max.y);
+                                let sub_rect = egui::Rect::from_min_max(
+                                    egui::pos2(bar_rect.min.x, y0),
+                                    egui::pos2(bar_rect.max.x, y1),
+                                );
+                                painter.rect_filled(sub_rect, 0.0, color);
+                            }
+
+                            // Outline around the vertical gradient bar
+                            painter.rect_stroke(
+                                bar_rect,
+                                2.0,
+                                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 85, 110)),
+                            );
+
+                            // Multi-level ticks and scale text labels at 100%, 75%, 50%, 25%, 0%
+                            let tick_levels = [
+                                (0.00_f32, 1.00_f64),
+                                (0.25_f32, 0.75_f64),
+                                (0.50_f32, 0.50_f64),
+                                (0.75_f32, 0.25_f64),
+                                (1.00_f32, 0.00_f64),
+                            ];
+
+                            for (y_frac, val_frac) in tick_levels {
+                                let y_pos = bar_rect.min.y + y_frac * bar_rect.height();
+                                painter.line_segment(
+                                    [
+                                        egui::pos2(bar_rect.max.x, y_pos),
+                                        egui::pos2(bar_rect.max.x + 4.0, y_pos),
+                                    ],
+                                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(140, 155, 180)),
+                                );
+
+                                let count_val = (max_cnt as f64 * val_frac) as u64;
+                                let text_str = sidebar::format_compact_num(count_val);
+
+                                painter.text(
+                                    egui::pos2(bar_rect.max.x + 7.0, y_pos),
+                                    egui::Align2::LEFT_CENTER,
+                                    text_str,
+                                    egui::FontId::proportional(11.0),
+                                    egui::Color32::from_rgb(180, 195, 215),
+                                );
+                            }
+
+                            response.on_hover_text(format!(
+                                "Vertical Count Heatmap Meter (Viridis)\nHigh (Top): {}\nLow (Bottom): {}",
+                                sidebar::format_thousands(max_cnt),
+                                sidebar::format_thousands(min_cnt)
+                            ));
+                        }
+                    });
+            });
+    }
 }

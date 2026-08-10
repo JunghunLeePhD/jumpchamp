@@ -62,6 +62,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
 
                 ui.checkbox(&mut state.show_pct_labels, "Show Percentage Annotations on Bars");
                 ui.checkbox(&mut state.show_grid_lines, "Show Reference Grid Lines");
+                ui.checkbox(&mut state.show_heatmap_meter, "Show Heat Map Count Meter (Top-Right)");
             });
 
             ui.add_space(8.0);
