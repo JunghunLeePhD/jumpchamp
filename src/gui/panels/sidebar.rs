@@ -207,22 +207,13 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         ui.separator();
         // Group 1: Gap order k parameter
         ui.label("k:");
-        if ui
-            .add(egui::DragValue::new(&mut state.k).range(1..=max_k))
-            .on_hover_text("Gap order k (e.g. k=1 for consecutive prime gaps)")
-            .changed()
-        {
-            action = SidebarAction::Compute;
-        }
+        ui.add(egui::DragValue::new(&mut state.k).range(1..=max_k))
+            .on_hover_text("Gap order k (e.g. k=1 for consecutive prime gaps)");
 
         ui.separator();
         // Group 2: Sort Order
-        if ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq").changed() {
-            action = SidebarAction::Compute;
-        }
-        if ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap").changed() {
-            action = SidebarAction::Compute;
-        }
+        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq");
+        ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap");
 
         ui.separator();
         // Group 3: Numerical Prime Value Range [N_min, N_max]
