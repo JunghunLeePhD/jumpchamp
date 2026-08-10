@@ -3,6 +3,7 @@
 // ============================================================================
 
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
+use crate::gui::panels::sidebar;
 use crate::gui::state::AppState;
 use crate::gui::theme::viridis_color;
 
@@ -155,15 +156,18 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                     ui.label(
                                         egui::RichText::new(format!("📊 Gap {gap}"))
                                             .strong()
+                                            .size(16.0)
                                             .color(egui::Color32::from_rgb(90, 200, 250)),
                                     );
                                     ui.label(
-                                        egui::RichText::new(format!("Probability P: {prob:.4}"))
+                                        egui::RichText::new(format!("Percentage: {pct:.2}%"))
                                             .strong()
+                                            .size(15.0)
                                             .color(egui::Color32::WHITE),
                                     );
                                     ui.label(
-                                        egui::RichText::new(format!("Count: {count} ({pct:.2}%)"))
+                                        egui::RichText::new(format!("Count: {}", sidebar::format_thousands(count)))
+                                            .size(14.0)
                                             .color(egui::Color32::from_rgb(180, 190, 205)),
                                     );
                                 });

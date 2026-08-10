@@ -79,7 +79,7 @@ impl AppState {
 
             show_settings: false,
             max_prime_limit: 10_000_000_000, // Default 10B (10 Billion)
-            max_k_limit: 20,
+            max_k_limit: 3,                  // Default max k limit = 3
             show_grid_lines: true,
             show_pct_labels: true,
 

@@ -24,6 +24,19 @@ pub fn format_compact_num(val: u64) -> String {
     }
 }
 
+pub fn format_thousands(val: u64) -> String {
+    let s = val.to_string();
+    let mut result = String::new();
+    let len = s.len();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result
+}
+
 fn render_dual_range_slider(
     ui: &mut egui::Ui,
     min_val: &mut u64,
