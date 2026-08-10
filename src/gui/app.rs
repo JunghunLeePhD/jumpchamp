@@ -123,11 +123,17 @@ impl App for JumpChampApp {
 
 
 pub fn run() -> eframe::Result<()> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("JumpChamp — Prime Gap Explorer 🦀")
+        .with_inner_size([1400.0, 900.0])
+        .with_min_inner_size([900.0, 600.0]);
+
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../assets/128x128.png")) {
+        viewport = viewport.with_icon(icon);
+    }
+
     let opts = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("JumpChamp — Prime Gap Explorer 🦀")
-            .with_inner_size([1400.0, 900.0])
-            .with_min_inner_size([900.0, 600.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
@@ -136,3 +142,4 @@ pub fn run() -> eframe::Result<()> {
         Box::new(|cc| Ok(Box::new(JumpChampApp::new(cc)))),
     )
 }
+

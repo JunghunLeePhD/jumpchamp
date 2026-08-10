@@ -23,6 +23,12 @@ dirs = "5.0"
 [package.metadata.bundle]
 name = "JumpChamp"
 identifier = "com.jumpchamp.gui"
+icon = [
+    "assets/32x32.png",
+    "assets/128x128.png",
+    "assets/256x256.png",
+    "assets/512x512.png"
+]
 version = "0.1.0"
 copyright = "Copyright (c) 2026"
 short_description = "JumpChamp Prime Gap Explorer"
