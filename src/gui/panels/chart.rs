@@ -75,14 +75,16 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
                     let x_pos = i as f64;
 
-                    // 1. Top Percentage Annotation (above bar height)
-                    texts.push(
-                        Text::new(
-                            PlotPoint::new(x_pos, prob + max_prob * 0.03),
-                            format!("{pct:.1}%"),
-                        )
-                        .color(if is_hovered { egui::Color32::WHITE } else { egui::Color32::from_rgb(220, 225, 235) }),
-                    );
+                    // 1. Top Percentage Annotation (if enabled)
+                    if state.show_pct_labels {
+                        texts.push(
+                            Text::new(
+                                PlotPoint::new(x_pos, prob + max_prob * 0.03),
+                                format!("{pct:.1}%"),
+                            )
+                            .color(if is_hovered { egui::Color32::WHITE } else { egui::Color32::from_rgb(220, 225, 235) }),
+                        );
+                    }
 
                     // 2. Bottom Gap Size Label (beneath y = 0 baseline)
                     texts.push(
@@ -107,12 +109,14 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                 })
                 .collect();
 
-            // Draw 4 positive horizontal reference grid lines (y > 0)
-            let grid_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18);
-            for fraction in [0.25, 0.50, 0.75, 1.00] {
-                let y_val = max_prob * fraction;
-                let line_points = vec![[-0.5, y_val], [bars_len - 0.5, y_val]];
-                plot_ui.line(Line::new(line_points).color(grid_color).width(1.0_f32));
+            // Draw 4 positive horizontal reference grid lines (if enabled)
+            if state.show_grid_lines {
+                let grid_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18);
+                for fraction in [0.25, 0.50, 0.75, 1.00] {
+                    let y_val = max_prob * fraction;
+                    let line_points = vec![[-0.5, y_val], [bars_len - 0.5, y_val]];
+                    plot_ui.line(Line::new(line_points).color(grid_color).width(1.0_f32));
+                }
             }
 
             // Draw solid baseline at y = 0

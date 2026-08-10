@@ -46,6 +46,13 @@ pub struct AppState {
     pub top_n: usize,
     pub sort_by: SortOrder,
 
+    // Settings & Limits
+    pub show_settings: bool,
+    pub max_prime_limit: u64,
+    pub max_k_limit: usize,
+    pub show_grid_lines: bool,
+    pub show_pct_labels: bool,
+
     // Data
     pub metadata: Option<DatasetMetadata>,
     pub freq_data: Vec<(u64, u64)>,
@@ -66,9 +73,15 @@ impl AppState {
         Self {
             k: 2,
             min_val: 1,
-            max_val: 100_000_000_000, // Default 1e11 (100 Billion)
+            max_val: 10_000_000_000, // Default 10B (10 Billion)
             top_n: 20,
             sort_by: SortOrder::ByFrequency,
+
+            show_settings: false,
+            max_prime_limit: 10_000_000_000, // Default 10B (10 Billion)
+            max_k_limit: 20,
+            show_grid_lines: true,
+            show_pct_labels: true,
 
             metadata: None,
             freq_data: Vec::new(),

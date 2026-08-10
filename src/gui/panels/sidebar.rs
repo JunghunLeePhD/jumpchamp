@@ -105,14 +105,21 @@ fn render_dual_range_slider(
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
 
-    let max_limit = 100_000_000_000u64; // 1e11 (100 Billion)
+    let max_limit = state.max_prime_limit;
+    let max_k = state.max_k_limit;
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
+        // Group 0: Settings Button (Front Position)
+        if ui.button("⚙ Settings").on_hover_text("Open Settings Window").clicked() {
+            state.show_settings = !state.show_settings;
+        }
+
+        ui.separator();
         // Group 1: Gap order k parameter
         ui.label("k:");
         if ui
-            .add(egui::DragValue::new(&mut state.k).range(1..=20))
+            .add(egui::DragValue::new(&mut state.k).range(1..=max_k))
             .on_hover_text("Gap order k (e.g. k=1 for consecutive prime gaps)")
             .changed()
         {

@@ -5,7 +5,7 @@
 use crossbeam_channel::unbounded;
 use eframe::App;
 
-use crate::gui::panels::{chart, sidebar, sidebar::SidebarAction};
+use crate::gui::panels::{chart, settings, sidebar, sidebar::SidebarAction};
 use crate::gui::state::{AppState, WorkerCommand, WorkerResult};
 use crate::gui::theme::apply_theme;
 use crate::gui::worker::spawn_worker;
@@ -108,6 +108,7 @@ impl App for JumpChampApp {
             chart::render(ui, &self.state);
         });
 
+        settings::render(ctx, &mut self.state);
 
         if let Some(err) = self.state.error_msg.clone() {
             egui::Window::new("Error").show(ctx, |ui| {
