@@ -8,8 +8,10 @@ use crate::gui::state::AppState;
 use crate::gui::theme::viridis_color;
 
 pub fn render(ui: &mut egui::Ui, state: &AppState) {
-    let display_len = state.top_n.min(state.freq_data.len());
-    let display_data = &state.freq_data[..display_len];
+    let total_gaps = state.freq_data.len();
+    let start_idx = (state.top_min.saturating_sub(1)).min(total_gaps);
+    let end_idx = state.top_max.min(total_gaps).max(start_idx);
+    let display_data = &state.freq_data[start_idx..end_idx];
 
     let total_count: u64 = display_data.iter().map(|&(_, cnt)| cnt).sum();
     let total_f64 = total_count.max(1) as f64;

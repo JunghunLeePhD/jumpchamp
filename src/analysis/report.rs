@@ -5,8 +5,8 @@
 use std::collections::BTreeMap;
 use super::gaps::RecordGap;
 
-/// Formats a gap frequency map as an aligned text report, showing the top `top_n` entries.
-pub fn format_report(freq_map: &BTreeMap<u64, u64>, top_n: usize) -> String {
+/// Formats a gap frequency map as an aligned text report, showing entries between `top_min` and `top_max` rank.
+pub fn format_report(freq_map: &BTreeMap<u64, u64>, top_min: usize, top_max: usize) -> String {
     let total_pairs: u64 = freq_map.values().sum();
     let mut sorted: Vec<_> = freq_map.iter().map(|(&diff, &count)| (diff, count)).collect();
     sorted.sort_by(|a, b| b.1.cmp(&a.1));
@@ -15,8 +15,11 @@ pub fn format_report(freq_map: &BTreeMap<u64, u64>, top_n: usize) -> String {
     out.push_str(&format!("{:<12} {:<15} {:<12}\n", "Diff", "Frequency", "Percentage"));
     out.push_str(&format!("{}\n", "-".repeat(42)));
 
-    for (diff, count) in sorted.into_iter().take(top_n) {
-        let pct = (count as f64 / total_pairs as f64) * 100.0;
+    let start_idx = (top_min.saturating_sub(1)).min(sorted.len());
+    let end_idx = top_max.min(sorted.len()).max(start_idx);
+
+    for (diff, count) in &sorted[start_idx..end_idx] {
+        let pct = (*count as f64 / total_pairs as f64) * 100.0;
         out.push_str(&format!("{:<12} {:<15} {:.2}%\n", diff, count, pct));
     }
 
@@ -74,7 +77,7 @@ mod tests {
         map.insert(4, 30);
         map.insert(6, 20);
 
-        let report = format_report(&map, 2);
+        let report = format_report(&map, 1, 2);
         assert!(report.contains("Diff"));
         assert!(report.contains("Total Analyzed Pairs: 100"));
     }

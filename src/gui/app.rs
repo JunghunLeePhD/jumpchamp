@@ -41,7 +41,8 @@ impl JumpChampApp {
             min_val: self.state.min_val,
             max_val: self.state.max_val,
             k: self.state.k,
-            top_n: self.state.top_n,
+            top_min: self.state.top_min,
+            top_max: self.state.top_max,
             sort_by: self.state.sort_by.clone(),
         };
         self.state.cmd_tx.send(cmd).ok();
@@ -79,11 +80,12 @@ impl App for JumpChampApp {
                 ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
                 ui.separator();
                 ui.label(format!(
-                    "📊 Range: {} ~ {} (k={}, Top N={})",
+                    "📊 Range: {} ~ {} (k={}, Rank={}~{})",
                     sidebar::format_compact_num(self.state.min_val),
                     sidebar::format_compact_num(self.state.max_val),
                     self.state.k,
-                    self.state.top_n
+                    self.state.top_min,
+                    self.state.top_max
                 ));
                 ui.separator();
                 let latency_str = self

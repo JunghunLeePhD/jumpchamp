@@ -115,6 +115,82 @@ fn render_dual_range_slider(
     ))
 }
 
+fn render_dual_top_range_slider(
+    ui: &mut egui::Ui,
+    min_val: &mut usize,
+    max_val: &mut usize,
+    limit: usize,
+) -> egui::Response {
+    let desired_size = egui::vec2(100.0, 18.0);
+    let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::drag());
+
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let track_y = rect.center().y;
+        let track_left = rect.min.x + 6.0;
+        let track_right = rect.max.x - 6.0;
+        let track_width = (track_right - track_left).max(1.0);
+        let max_lim = limit.max(1) as f64;
+
+        let val_to_x = |v: usize| -> f32 {
+            let frac = (v as f64 / max_lim).clamp(0.0, 1.0) as f32;
+            track_left + frac * track_width
+        };
+
+        let x_to_val = |x: f32| -> usize {
+            let frac = ((x - track_left) / track_width).clamp(0.0, 1.0) as f64;
+            ((frac * max_lim).round() as usize).clamp(1, limit)
+        };
+
+        let x_min = val_to_x(*min_val);
+        let x_max = val_to_x(*max_val);
+
+        // 1. Draw Background Rail (Single Track)
+        painter.line_segment(
+            [egui::pos2(track_left, track_y), egui::pos2(track_right, track_y)],
+            egui::Stroke::new(4.0_f32, egui::Color32::from_rgb(45, 55, 75)),
+        );
+
+        // 2. Draw Active Range Fill Line
+        painter.line_segment(
+            [egui::pos2(x_min, track_y), egui::pos2(x_max, track_y)],
+            egui::Stroke::new(4.0_f32, egui::Color32::from_rgb(255, 180, 0)),
+        );
+
+        // 3. Handle Pointer Dragging for Min & Max Thumbs
+        if response.dragged() {
+            if let Some(pointer_pos) = response.interact_pointer_pos() {
+                let d_min = (pointer_pos.x - x_min).abs();
+                let d_max = (pointer_pos.x - x_max).abs();
+                let new_val = x_to_val(pointer_pos.x);
+
+                if d_min <= d_max {
+                    *min_val = new_val.min(*max_val);
+                } else {
+                    *max_val = new_val.max(*min_val).min(limit);
+                }
+                response.mark_changed();
+            }
+        }
+
+        // 4. Draw Min Thumb
+        let thumb_r = 6.0_f32;
+        let min_circle = egui::pos2(x_min, track_y);
+        painter.circle_filled(min_circle, thumb_r, egui::Color32::from_rgb(235, 235, 235));
+        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(255, 180, 0)));
+
+        // 5. Draw Max Thumb
+        let max_circle = egui::pos2(x_max, track_y);
+        painter.circle_filled(max_circle, thumb_r, egui::Color32::from_rgb(255, 180, 0));
+        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
+    }
+
+    response.on_hover_text(format!(
+        "Rank Range: Rank {} ~ Rank {}",
+        min_val, max_val
+    ))
+}
+
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
 
@@ -185,13 +261,29 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         }
 
         ui.separator();
-        // Group 4: Dynamic Top N Slider (Bounded by unique gaps found in range)
-        let dynamic_top_n_max = state.freq_data.len().max(5);
-        state.top_n = state.top_n.clamp(5, dynamic_top_n_max);
-        ui.add_sized(
-            [70.0_f32, 18.0_f32],
-            egui::Slider::new(&mut state.top_n, 5..=dynamic_top_n_max),
-        );
+        // Group 4: Dynamic Min/Max Range Slider (Bounded by unique gaps found in range)
+        let dynamic_top_max_limit = state.freq_data.len().max(5);
+        state.top_min = state.top_min.clamp(1, state.top_max);
+        state.top_max = state.top_max.clamp(state.top_min, dynamic_top_max_limit);
+
+        ui.label("Rank:");
+        if ui
+            .add(egui::DragValue::new(&mut state.top_min).range(1..=state.top_max))
+            .on_hover_text("Rank Min (N_min)")
+            .changed()
+        {
+            state.top_min = state.top_min.clamp(1, state.top_max);
+        }
+
+        render_dual_top_range_slider(ui, &mut state.top_min, &mut state.top_max, dynamic_top_max_limit);
+
+        if ui
+            .add(egui::DragValue::new(&mut state.top_max).range(state.top_min..=dynamic_top_max_limit))
+            .on_hover_text("Rank Max (N_max)")
+            .changed()
+        {
+            state.top_max = state.top_max.clamp(state.top_min, dynamic_top_max_limit);
+        }
 
         ui.separator();
         // Group 5: Action Button / Progress Bar

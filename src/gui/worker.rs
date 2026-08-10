@@ -32,7 +32,8 @@ pub fn spawn_worker(
                     min_val,
                     max_val,
                     k,
-                    top_n,
+                    top_min,
+                    top_max,
                     sort_by,
                 }) => {
                     cancel_flag.store(false, Ordering::SeqCst);
@@ -40,7 +41,8 @@ pub fn spawn_worker(
                         min_val,
                         max_val,
                         k,
-                        top_n,
+                        top_min,
+                        top_max,
                         sort_by,
                         &mut cache,
                         &res_tx,
@@ -61,7 +63,8 @@ fn run_compute_with_cache(
     min_val: u64,
     max_val: u64,
     k: usize,
-    top_n: usize,
+    _top_min: usize,
+    top_max: usize,
     sort_by: SortOrder,
     cache: &mut SegmentCache,
     res_tx: &Sender<WorkerResult>,
@@ -141,7 +144,7 @@ fn run_compute_with_cache(
         .filter_map(|(gap, &count)| if count > 0 { Some((gap as u64, count)) } else { None })
         .collect();
 
-    let limit_top_n = top_n.max(1000);
+    let limit_top_n = top_max.max(1000);
     match sort_by {
         SortOrder::ByFrequency => {
             freq_vec.sort_by(|a, b| b.1.cmp(&a.1));

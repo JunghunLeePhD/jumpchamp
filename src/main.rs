@@ -132,7 +132,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let duration = start_time.elapsed();
 
-    print!("{}", format_report(&frequencies, 20));
+    print!("{}", format_report(&frequencies, 1, 20));
     println!("Time Elapsed: {:.2?}\n", duration);
 
     Ok(())

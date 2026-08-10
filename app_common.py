@@ -25,7 +25,8 @@ class AppConfig:
 class FilterParams:
     min_idx: int
     max_idx: int
-    top_n: int
+    top_min: int
+    top_max: int
     sort_by: str  # "Frequency" or "Gap Size"
 
 @dataclass(frozen=True)
@@ -201,6 +202,9 @@ def query_prime_gaps(
     limit_count = params.max_idx - params.min_idx + 1
     escaped_path = gaps_target.replace("'", "''")
 
+    top_limit = max(1, params.top_max - params.top_min + 1)
+    top_offset = max(0, params.top_min - 1)
+
     query = f"""
     WITH sliced AS (
         SELECT deltak FROM read_parquet('{escaped_path}')
@@ -210,7 +214,7 @@ def query_prime_gaps(
     FROM sliced
     GROUP BY deltak
     ORDER BY frequency DESC
-    LIMIT {params.top_n};
+    LIMIT {top_limit} OFFSET {top_offset};
     """
 
     try:
@@ -300,7 +304,7 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
         st.session_state.max_idx_val = max_v
         st.session_state.slider_bounds = (min_v, max_v)
 
-    col1, col2, col3, col4, col5 = st.columns([1, 1, 1.1, 1.1, 2.2])
+    col1, col2_a, col2_b, col3, col4, col5 = st.columns([0.9, 0.8, 0.8, 1.0, 1.0, 1.8])
 
     with col1:
         sort_by = st.selectbox(
@@ -311,15 +315,26 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
             help="'Frequency' sorts descending by count; 'Gap Size' orders numerically along the X-axis."
         )
 
-    with col2:
-        top_n = st.number_input(
-            "Top N Gaps",
-            min_value=5,
-            max_value=max(5, meta.unique_gaps_count),
-            value=min(20, meta.unique_gaps_count),
-            step=5,
+    with col2_a:
+        top_min = st.number_input(
+            "Min Rank",
+            min_value=1,
+            max_value=max(1, meta.unique_gaps_count),
+            value=1,
+            step=1,
             disabled=is_processing,
-            help=f"Select top N gaps to display (Total unique gap sizes in dataset: {meta.unique_gaps_count})"
+            help="Minimum rank of gaps to display (1 = most frequent)"
+        )
+
+    with col2_b:
+        top_max = st.number_input(
+            "Max Rank",
+            min_value=1,
+            max_value=max(1, meta.unique_gaps_count),
+            value=min(20, meta.unique_gaps_count),
+            step=1,
+            disabled=is_processing,
+            help="Maximum rank of gaps to display"
         )
 
     with col3:
@@ -354,10 +369,14 @@ def render_top_filter_bar(meta: DatasetMetadata, is_processing: bool = False) ->
             disabled=is_processing
         )
 
+    top_min_val = int(min(top_min, top_max))
+    top_max_val = int(max(top_min, top_max))
+
     return FilterParams(
         min_idx=int(st.session_state.min_idx_val),
         max_idx=int(st.session_state.max_idx_val),
-        top_n=int(top_n),
+        top_min=top_min_val,
+        top_max=top_max_val,
         sort_by=sort_by
     )
 

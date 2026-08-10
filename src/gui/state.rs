@@ -24,7 +24,8 @@ pub enum WorkerCommand {
         min_val: u64,
         max_val: u64,
         k: usize,
-        top_n: usize,
+        top_min: usize,
+        top_max: usize,
         sort_by: SortOrder,
     },
     Cancel,
@@ -43,7 +44,8 @@ pub struct AppState {
     pub k: usize,
     pub min_val: u64,
     pub max_val: u64,
-    pub top_n: usize,
+    pub top_min: usize,
+    pub top_max: usize,
     pub sort_by: SortOrder,
 
     // Settings & Limits
@@ -75,7 +77,8 @@ impl AppState {
             k: 2,
             min_val: 1,
             max_val: 10_000_000_000, // Default 10B (10 Billion)
-            top_n: 20,
+            top_min: 1,
+            top_max: 20,
             sort_by: SortOrder::ByFrequency,
 
             show_settings: false,
