@@ -73,10 +73,6 @@ fn run_compute_with_cache(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let start_time = std::time::Instant::now();
 
-    let start_seg = min_val / SEGMENT_SIZE;
-    let end_seg = max_val / SEGMENT_SIZE;
-    let total_segs = (end_seg - start_seg + 1) as f32;
-
     let mut counts = vec![0u64; 65536];
 
     res_tx
@@ -88,51 +84,86 @@ fn run_compute_with_cache(
         }))
         .ok();
 
-    for (seg_step, seg_idx) in (start_seg..=end_seg).enumerate() {
-        if cancel_flag.load(Ordering::SeqCst) {
-            return Ok(());
-        }
+    if max_val < SEGMENT_SIZE {
+        // Fast Direct Path for Small Ranges (< 5M): < 0.1 ms execution
+        let sieve_low = min_val.max(2) as usize;
+        let sieve_high = max_val.max(sieve_low as u64) as usize;
 
-        let key = (seg_idx, k);
-        if !cache.store.contains_key(&key) {
-            let seg_low = (seg_idx * SEGMENT_SIZE).max(2) as usize;
-            let seg_high = ((seg_idx + 1) * SEGMENT_SIZE) as usize;
+        let sqrt_limit = (sieve_high as f64).sqrt() as usize;
+        let base_primes = small_primes(sqrt_limit.max(2));
 
-            let sqrt_limit = (seg_high as f64).sqrt() as usize;
-            let base_primes = small_primes(sqrt_limit.max(2));
+        let block_size = 500_000usize;
+        let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
 
-            let mut seg_counts = vec![0u64; 65536];
-            let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
+        for block in stream_prime_blocks_range(sieve_low, sieve_high, block_size, &base_primes) {
+            if cancel_flag.load(Ordering::SeqCst) {
+                return Ok(());
+            }
 
-            for block in stream_prime_blocks_range(seg_low, seg_high, 1_000_000, &base_primes) {
-                for p in block {
-                    if cancel_flag.load(Ordering::SeqCst) {
-                        return Ok(());
-                    }
-                    window.push_back(p);
-                    if window.len() == k + 1 {
-                        let p_start = window.pop_front().unwrap();
+            for p in block {
+                window.push_back(p);
+                if window.len() == k + 1 {
+                    let p_start = window.pop_front().unwrap();
+                    if p_start >= min_val && p <= max_val {
                         let deltak = (p - p_start) as usize;
                         if deltak < 65536 {
-                            seg_counts[deltak] += 1;
+                            counts[deltak] += 1;
                         }
                     }
                 }
             }
-            cache.store.insert(key, seg_counts);
         }
+    } else {
+        // Segmented Cache Path for Large Ranges (>= 5M): Fast cache-hit accumulation
+        let start_seg = min_val / SEGMENT_SIZE;
+        let end_seg = max_val / SEGMENT_SIZE;
+        let total_segs = (end_seg - start_seg + 1) as f32;
 
-        // Fast histogram accumulation from cache
-        if let Some(cached_vec) = cache.store.get(&key) {
-            for (g, &cnt) in cached_vec.iter().enumerate() {
-                counts[g] += cnt;
+        for (seg_step, seg_idx) in (start_seg..=end_seg).enumerate() {
+            if cancel_flag.load(Ordering::SeqCst) {
+                return Ok(());
             }
-        }
 
-        if total_segs > 0.0 {
-            let prog = ((seg_step + 1) as f32 / total_segs).clamp(0.0, 0.99);
-            res_tx.send(WorkerResult::Progress(prog)).ok();
-            ctx.request_repaint();
+            let key = (seg_idx, k);
+            if !cache.store.contains_key(&key) {
+                let seg_low = (seg_idx * SEGMENT_SIZE).max(2) as usize;
+                let seg_high = ((seg_idx + 1) * SEGMENT_SIZE) as usize;
+
+                let sqrt_limit = (seg_high as f64).sqrt() as usize;
+                let base_primes = small_primes(sqrt_limit.max(2));
+
+                let mut seg_counts = vec![0u64; 65536];
+                let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
+
+                for block in stream_prime_blocks_range(seg_low, seg_high, 1_000_000, &base_primes) {
+                    for p in block {
+                        if cancel_flag.load(Ordering::SeqCst) {
+                            return Ok(());
+                        }
+                        window.push_back(p);
+                        if window.len() == k + 1 {
+                            let p_start = window.pop_front().unwrap();
+                            let deltak = (p - p_start) as usize;
+                            if deltak < 65536 {
+                                seg_counts[deltak] += 1;
+                            }
+                        }
+                    }
+                }
+                cache.store.insert(key, seg_counts);
+            }
+
+            if let Some(cached_vec) = cache.store.get(&key) {
+                for (g, &cnt) in cached_vec.iter().enumerate() {
+                    counts[g] += cnt;
+                }
+            }
+
+            if total_segs > 0.0 {
+                let prog = ((seg_step + 1) as f32 / total_segs).clamp(0.0, 0.99);
+                res_tx.send(WorkerResult::Progress(prog)).ok();
+                ctx.request_repaint();
+            }
         }
     }
 
