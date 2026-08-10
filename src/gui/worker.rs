@@ -141,17 +141,31 @@ fn run_compute_with_cache(
         .filter_map(|(gap, &count)| if count > 0 { Some((gap as u64, count)) } else { None })
         .collect();
 
+    let limit_top_n = top_n.max(1000);
     match sort_by {
         SortOrder::ByFrequency => {
             freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
-            freq_vec.truncate(top_n);
+            freq_vec.truncate(limit_top_n);
         }
         SortOrder::ByGapSize => {
             freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
-            freq_vec.truncate(top_n);
+            freq_vec.truncate(limit_top_n);
             freq_vec.sort_by_key(|&(g, _)| g);
         }
     }
+
+    let unique_gaps_count = freq_vec.len() as u64;
+    let min_gap_val = freq_vec.iter().map(|&(g, _)| g).min().unwrap_or(0) as u16;
+    let max_gap_val = freq_vec.iter().map(|&(g, _)| g).max().unwrap_or(0) as u16;
+
+    res_tx
+        .send(WorkerResult::Metadata(DatasetMetadata {
+            total_rows: max_val,
+            unique_gaps: unique_gaps_count,
+            min_gap: min_gap_val,
+            max_gap: max_gap_val,
+        }))
+        .ok();
 
     res_tx.send(WorkerResult::FrequencyData(freq_vec)).ok();
     res_tx.send(WorkerResult::QueryLatency(elapsed_ms)).ok();

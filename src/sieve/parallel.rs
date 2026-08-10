@@ -13,7 +13,7 @@ pub fn sieve_range_parallel(start: usize, end: usize, base_primes: &[usize]) -> 
     if start > end {
         return vec![];
     }
-    let segment_span = 262_144; // Span of 262K numbers = 16 KB bitmask, perfect L1 cache fit
+    let segment_span = 245_760; // 30 * 8192 numbers = 8 KB Wheel-30 bitmask, L1 cache fit
     let num_segments = (end - start) / segment_span + 1;
 
     (0..num_segments)

@@ -76,7 +76,7 @@ impl App for JumpChampApp {
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("⚡ Engine: In-Memory Parallel Segmented Sieve");
+                ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
                 ui.separator();
                 ui.label(format!(
                     "📊 Range: {} ~ {} (k={}, Top N={})",
@@ -91,7 +91,7 @@ impl App for JumpChampApp {
                     .query_latency_ms
                     .map(|ms| format!("{:.1} ms", ms))
                     .unwrap_or_else(|| "-- ms".to_string());
-                ui.label(format!("⏱️ Query Latency: {}", latency_str));
+                ui.label(format!("⚡ Latency: {}", latency_str));
             });
         });
 

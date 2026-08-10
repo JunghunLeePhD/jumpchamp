@@ -1,54 +1,88 @@
-// ============================================================================
-// Bitpacked Odd-Only Sieve of Eratosthenes — pure, high-performance
-// ============================================================================
+const WHEEL_OFFSETS: [usize; 8] = [1, 7, 11, 13, 17, 19, 23, 29];
+const WHEEL_INDEX: [u8; 30] = [
+    255, 0, 255, 255, 255, 255, 255, 1, 255, 255,
+    255, 2, 255, 3, 255, 255, 255, 4, 255, 5,
+    255, 255, 255, 6, 255, 255, 255, 255, 255, 7,
+];
 
-/// Finds base prime numbers up to `limit` using a bitpacked odd-only Sieve of Eratosthenes.
+/// Finds base prime numbers up to `limit` using a bitpacked Wheel-of-30 Sieve of Eratosthenes.
 ///
 /// Returns a sorted `Vec<usize>` of all primes in `[2, limit]`.
 pub fn small_primes(limit: usize) -> Vec<usize> {
     if limit < 2 {
         return vec![];
     }
-    if limit == 2 {
-        return vec![2];
+    let mut primes = Vec::new();
+    if limit >= 2 { primes.push(2); }
+    if limit >= 3 { primes.push(3); }
+    if limit >= 5 { primes.push(5); }
+    if limit < 7 {
+        return primes;
     }
 
-    let num_odds = (limit - 3) / 2 + 1;
-    let mut is_prime = vec![true; num_odds];
+    let num_blocks = (limit / 30) + 1;
+    let num_bits = num_blocks * 8;
+    let num_words = (num_bits + 63) / 64;
+    let mut bits = vec![!0u64; num_words];
 
     let sqrt_limit = (limit as f64).sqrt() as usize;
-    let max_i = if sqrt_limit >= 3 { (sqrt_limit - 3) / 2 } else { 0 };
 
-    for i in 0..=max_i {
-        if is_prime[i] {
-            let p = 2 * i + 3;
-            let start_val = p * p;
-            if start_val <= limit {
-                let start_idx = (start_val - 3) / 2;
-                let step = p;
-                let mut j = start_idx;
-                while j < num_odds {
-                    is_prime[j] = false;
-                    j += step;
+    for word_idx in 0..num_words {
+        let mut word = bits[word_idx];
+        while word != 0 {
+            let bit = word.trailing_zeros() as usize;
+            let bit_idx = word_idx * 64 + bit;
+            let block_i = bit_idx / 8;
+            let res_i = bit_idx % 8;
+            let p = block_i * 30 + WHEEL_OFFSETS[res_i];
+
+            if p > sqrt_limit {
+                break;
+            }
+
+            if p > 1 {
+                let start_val = p * p;
+                if start_val <= limit {
+                    let step = 2 * p; // Skip even multiples
+                    let mut m = start_val;
+                    while m <= limit {
+                        let rem = m % 30;
+                        let r_idx = WHEEL_INDEX[rem];
+                        if r_idx != 255 {
+                            let m_bit = (m / 30) * 8 + r_idx as usize;
+                            let w_idx = m_bit / 64;
+                            if w_idx < num_words {
+                                bits[w_idx] &= !(1u64 << (m_bit % 64));
+                            }
+                        }
+                        m += step;
+                    }
                 }
             }
+            word &= word - 1;
         }
     }
 
-    let mut primes = Vec::with_capacity(num_odds + 1);
-    primes.push(2);
-    for i in 0..num_odds {
-        if is_prime[i] {
-            primes.push(2 * i + 3);
+    for word_idx in 0..num_words {
+        let mut word = bits[word_idx];
+        while word != 0 {
+            let bit = word.trailing_zeros() as usize;
+            let bit_idx = word_idx * 64 + bit;
+            let block_i = bit_idx / 8;
+            let res_i = bit_idx % 8;
+            let p = block_i * 30 + WHEEL_OFFSETS[res_i];
+            if p > 1 && p <= limit {
+                primes.push(p);
+            }
+            word &= word - 1;
         }
     }
+
     primes
 }
 
 /// Sieves a single segment `[seg_low, seg_high]` using precomputed base primes
-/// and 64-bit bitmask word alignment for 8x cache efficiency.
-///
-/// All prime numbers in the window that survive the sieve are returned as `u64`.
+/// and Wheel-of-30 64-bit word bitmask alignment.
 pub fn sieve_segment(seg_low: usize, seg_high: usize, base_primes: &[usize]) -> Vec<u64> {
     if seg_low > seg_high {
         return vec![];
@@ -56,66 +90,69 @@ pub fn sieve_segment(seg_low: usize, seg_high: usize, base_primes: &[usize]) -> 
 
     let mut primes = Vec::new();
 
-    // 1. Include 2 if in segment
-    if seg_low <= 2 && 2 <= seg_high {
-        primes.push(2);
+    // 1. Include base primes 2, 3, 5 if in segment
+    for &p in &[2, 3, 5] {
+        if seg_low <= p && p <= seg_high {
+            primes.push(p as u64);
+        }
     }
 
-    // 2. Determine odd range bounds [seg_low_odd, seg_high_odd]
-    let seg_low_odd = if seg_low % 2 == 0 { seg_low + 1 } else { seg_low }.max(3);
-    let seg_high_odd = if seg_high % 2 == 0 { seg_high.saturating_sub(1) } else { seg_high };
+    let block_low = (seg_low / 30) * 30;
+    let block_high = ((seg_high + 29) / 30) * 30;
+    let num_blocks = (block_high - block_low) / 30 + 1;
+    let num_bits = num_blocks * 8;
+    let num_words = (num_bits + 63) / 64;
 
-    if seg_low_odd > seg_high_odd {
-        return primes;
-    }
-
-    let num_odds = (seg_high_odd - seg_low_odd) / 2 + 1;
-    let num_words = (num_odds + 63) / 64;
     let mut bits = vec![!0u64; num_words];
 
-    // Clear out-of-bounds padding bits in the final 64-bit word
-    let remainder = num_odds % 64;
-    if remainder != 0 {
-        bits[num_words - 1] = (1u64 << remainder) - 1;
-    }
-
-    // 3. Cross out composite odd numbers for each base prime
+    // 2. Mark composites for base_primes > 5
     for &p in base_primes {
-        if p == 2 {
+        if p <= 5 {
             continue;
         }
 
-        let min_multiple = p.saturating_mul(p).max(seg_low_odd);
-        let start = if min_multiple % p == 0 {
-            min_multiple
+        let start_mult = p.saturating_mul(p).max(block_low);
+        let mut start = if start_mult % p == 0 {
+            start_mult
         } else {
-            min_multiple + (p - (min_multiple % p))
+            start_mult + (p - (start_mult % p))
         };
 
-        let start_odd = if start % 2 == 0 { start + p } else { start };
+        if start % 2 == 0 {
+            start += p;
+        }
 
-        if start_odd <= seg_high_odd {
-            let start_bit = (start_odd - seg_low_odd) / 2;
-            let step = p;
-            let mut bit_idx = start_bit;
-            while bit_idx < num_odds {
-                bits[bit_idx / 64] &= !(1u64 << (bit_idx % 64));
-                bit_idx += step;
+        let step = 2 * p; // Skip even multiples
+        let mut m = start;
+        while m <= seg_high + 30 {
+            let rem = m % 30;
+            let r_idx = WHEEL_INDEX[rem];
+            if r_idx != 255 && m >= block_low {
+                let m_offset = m - block_low;
+                let m_bit = (m_offset / 30) * 8 + r_idx as usize;
+                let word_i = m_bit / 64;
+                if word_i < num_words {
+                    bits[word_i] &= !(1u64 << (m_bit % 64));
+                }
             }
+            m += step;
         }
     }
 
-    // 4. Fast bit-scan extraction using trailing_zeros (tzcnt intrinsic)
-    for (word_idx, &word) in bits.iter().enumerate() {
-        let mut val = word;
-        while val != 0 {
-            let bit = val.trailing_zeros() as usize;
+    // 3. Extract surviving primes
+    for word_idx in 0..num_words {
+        let mut word = bits[word_idx];
+        while word != 0 {
+            let bit = word.trailing_zeros() as usize;
             let bit_idx = word_idx * 64 + bit;
-            if bit_idx < num_odds {
-                let p_val = seg_low_odd + 2 * bit_idx;
+            let block_i = bit_idx / 8;
+            let res_i = bit_idx % 8;
+            let p_val = block_low + block_i * 30 + WHEEL_OFFSETS[res_i];
+
+            if p_val >= seg_low && p_val <= seg_high && p_val > 1 {
                 primes.push(p_val as u64);
             }
-            val &= val - 1;
+            word &= word - 1;
         }
     }
 

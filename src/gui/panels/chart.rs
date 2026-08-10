@@ -7,10 +7,12 @@ use crate::gui::state::AppState;
 use crate::gui::theme::viridis_color;
 
 pub fn render(ui: &mut egui::Ui, state: &AppState) {
-    let total_count: u64 = state.freq_data.iter().map(|&(_, cnt)| cnt).sum();
+    let display_len = state.top_n.min(state.freq_data.len());
+    let display_data = &state.freq_data[..display_len];
+
+    let total_count: u64 = display_data.iter().map(|&(_, cnt)| cnt).sum();
     let total_f64 = total_count.max(1) as f64;
-    let max_count = state
-        .freq_data
+    let max_count = display_data
         .iter()
         .map(|&(_, cnt)| cnt)
         .max()
@@ -18,7 +20,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
         .max(1) as f64;
 
     let max_prob = max_count / total_f64;
-    let bars_len = state.freq_data.len().max(1) as f64;
+    let bars_len = display_data.len().max(1) as f64;
 
     // Extract ctx and layer_id prior to Plot::show to avoid borrow checker conflict on ui
     let ctx = ui.ctx().clone();
@@ -52,8 +54,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
             let mut texts = Vec::new();
 
-            let bars: Vec<Bar> = state
-                .freq_data
+            let bars: Vec<Bar> = display_data
                 .iter()
                 .enumerate()
                 .map(|(i, &(gap, count))| {
@@ -131,8 +132,8 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
             // High-contrast floating card tooltip with shadow box & border
             if let Some(idx_val) = hovered_idx {
-                if idx_val >= 0 && (idx_val as usize) < state.freq_data.len() {
-                    let (gap, count) = state.freq_data[idx_val as usize];
+                if idx_val >= 0 && (idx_val as usize) < display_data.len() {
+                    let (gap, count) = display_data[idx_val as usize];
                     let prob = count as f64 / total_f64;
                     let pct = prob * 100.0;
 

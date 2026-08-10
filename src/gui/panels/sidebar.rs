@@ -165,10 +165,13 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         }
 
         ui.separator();
-        // Group 4: Clean Top N Slider
-        if ui.add_sized([70.0_f32, 18.0_f32], egui::Slider::new(&mut state.top_n, 5..=200)).changed() {
-            action = SidebarAction::Compute;
-        }
+        // Group 4: Dynamic Top N Slider (Bounded by unique gaps found in range)
+        let dynamic_top_n_max = state.freq_data.len().max(5);
+        state.top_n = state.top_n.clamp(5, dynamic_top_n_max);
+        ui.add_sized(
+            [70.0_f32, 18.0_f32],
+            egui::Slider::new(&mut state.top_n, 5..=dynamic_top_n_max),
+        );
 
         ui.separator();
         // Group 5: Action Button / Progress Bar
