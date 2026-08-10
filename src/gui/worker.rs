@@ -1,10 +1,18 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender};
 
 use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
 use crate::sieve::{small_primes, stream_prime_blocks_range};
+
+const SEGMENT_SIZE: u64 = 5_000_000;
+
+#[derive(Default)]
+struct SegmentCache {
+    // Key: (segment_index, k_step) -> Value: 65,536-entry gap frequency histogram
+    store: HashMap<(u64, usize), Vec<u64>>,
+}
 
 pub fn spawn_worker(
     cmd_rx: Receiver<WorkerCommand>,
@@ -13,6 +21,7 @@ pub fn spawn_worker(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let cancel_flag = Arc::new(AtomicBool::new(false));
+        let mut cache = SegmentCache::default();
 
         loop {
             match cmd_rx.recv() {
@@ -27,12 +36,13 @@ pub fn spawn_worker(
                     sort_by,
                 }) => {
                     cancel_flag.store(false, Ordering::SeqCst);
-                    if let Err(err) = run_compute_in_memory(
+                    if let Err(err) = run_compute_with_cache(
                         min_val,
                         max_val,
                         k,
                         top_n,
                         sort_by,
+                        &mut cache,
                         &res_tx,
                         &ctx,
                         &cancel_flag,
@@ -47,28 +57,24 @@ pub fn spawn_worker(
     })
 }
 
-fn run_compute_in_memory(
+fn run_compute_with_cache(
     min_val: u64,
     max_val: u64,
     k: usize,
     top_n: usize,
     sort_by: SortOrder,
+    cache: &mut SegmentCache,
     res_tx: &Sender<WorkerResult>,
     ctx: &egui::Context,
     cancel_flag: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let start_time = std::time::Instant::now();
 
-    let start_val = min_val.max(2) as usize;
-    let limit_val = max_val.max(start_val as u64) as usize;
-    let range_span = (limit_val - start_val + 1) as f32;
-
-    let sqrt_limit = (limit_val as f64).sqrt() as usize;
-    let base_primes = small_primes(sqrt_limit.max(2));
-    let block_size = 1_000_000;
+    let start_seg = min_val / SEGMENT_SIZE;
+    let end_seg = max_val / SEGMENT_SIZE;
+    let total_segs = (end_seg - start_seg + 1) as f32;
 
     let mut counts = vec![0u64; 65536];
-    let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
 
     res_tx
         .send(WorkerResult::Metadata(DatasetMetadata {
@@ -79,27 +85,51 @@ fn run_compute_in_memory(
         }))
         .ok();
 
-    for block in stream_prime_blocks_range(start_val, limit_val, block_size, &base_primes) {
-        for p in block {
-            if cancel_flag.load(Ordering::SeqCst) {
-                return Ok(());
-            }
+    for (seg_step, seg_idx) in (start_seg..=end_seg).enumerate() {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(());
+        }
 
-            window.push_back(p);
+        let key = (seg_idx, k);
+        if !cache.store.contains_key(&key) {
+            let seg_low = (seg_idx * SEGMENT_SIZE).max(2) as usize;
+            let seg_high = ((seg_idx + 1) * SEGMENT_SIZE) as usize;
 
-            if window.len() == k + 1 {
-                let p_start = window.pop_front().unwrap();
-                let deltak = (p - p_start) as usize;
-                if deltak < 65536 {
-                    counts[deltak] += 1;
+            let sqrt_limit = (seg_high as f64).sqrt() as usize;
+            let base_primes = small_primes(sqrt_limit.max(2));
+
+            let mut seg_counts = vec![0u64; 65536];
+            let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
+
+            for block in stream_prime_blocks_range(seg_low, seg_high, 1_000_000, &base_primes) {
+                for p in block {
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        return Ok(());
+                    }
+                    window.push_back(p);
+                    if window.len() == k + 1 {
+                        let p_start = window.pop_front().unwrap();
+                        let deltak = (p - p_start) as usize;
+                        if deltak < 65536 {
+                            seg_counts[deltak] += 1;
+                        }
+                    }
                 }
             }
+            cache.store.insert(key, seg_counts);
+        }
 
-            if p % 500_000 < 2 && range_span > 0.0 {
-                let prog = ((p as f32 - start_val as f32) / range_span).clamp(0.0, 0.99);
-                res_tx.send(WorkerResult::Progress(prog)).ok();
-                ctx.request_repaint();
+        // Fast histogram accumulation from cache
+        if let Some(cached_vec) = cache.store.get(&key) {
+            for (g, &cnt) in cached_vec.iter().enumerate() {
+                counts[g] += cnt;
             }
+        }
+
+        if total_segs > 0.0 {
+            let prog = ((seg_step + 1) as f32 / total_segs).clamp(0.0, 0.99);
+            res_tx.send(WorkerResult::Progress(prog)).ok();
+            ctx.request_repaint();
         }
     }
 
