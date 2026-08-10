@@ -132,10 +132,17 @@ jobs:
             ### 🍏 macOS First-Time Launch Instructions:
             1. Download and double-click `JumpChamp-macos-arm64.app.zip` (or Intel version) to unzip.
             2. **Right-click** (or Control-click) `JumpChamp.app`, select **Open**, and click **Open** on the security popup.
-            3. *Done!* Subsequent launches will work with a simple **double-click**.
+
+            #### ⚠️ If macOS says "App is damaged and can't be opened" or refuses to launch:
+            Open **Terminal** and run:
+            ```bash
+            sudo xattr -cr /path/to/JumpChamp.app
+            ```
+            *(Tip: Type `sudo xattr -cr ` with a trailing space, drag & drop `JumpChamp.app` into the Terminal window, then press Enter)*.
           files: release-artifacts/*/*
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
