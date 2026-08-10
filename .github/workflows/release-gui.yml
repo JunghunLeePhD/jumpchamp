@@ -25,23 +25,23 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: jumpchamp_gui-windows-x86_64.exe
             asset_name: jumpchamp_gui-windows-x86_64.exe
+            is_macos: false
 
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: jumpchamp_gui
-            asset_name: jumpchamp_gui-macos-arm64
+            asset_name: JumpChamp-macos-arm64.app.zip
+            is_macos: true
 
           - os: macos-15-intel
             target: x86_64-apple-darwin
-            artifact_name: jumpchamp_gui
-            asset_name: jumpchamp_gui-macos-intel-x86_64
+            asset_name: JumpChamp-macos-intel-x86_64.app.zip
+            is_macos: true
 
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: jumpchamp_gui
             asset_name: jumpchamp_gui-linux-x86_64
+            is_macos: false
 
     steps:
       - name: Checkout Code
@@ -61,18 +61,24 @@ jobs:
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Build GUI App
-        run: cargo build --release --target ${{ matrix.target }} --bin jumpchamp_gui
+      - name: Install cargo-bundle (macOS)
+        if: matrix.is_macos == true
+        run: cargo install cargo-bundle
 
-      - name: Rename Executable for Release
-        shell: bash
+      - name: Build & Package GUI App
         run: |
-          cd target/${{ matrix.target }}/release
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cp jumpchamp_gui.exe ../../../${{ matrix.asset_name }}
+          if [ "${{ matrix.is_macos }}" = "true" ]; then
+            cargo bundle --release --target ${{ matrix.target }} --bin jumpchamp_gui
+            cd target/${{ matrix.target }}/release/bundle/osx
+            zip -r ../../../../../${{ matrix.asset_name }} JumpChamp.app
+          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cargo build --release --target ${{ matrix.target }} --bin jumpchamp_gui
+            cp target/${{ matrix.target }}/release/jumpchamp_gui.exe ${{ matrix.asset_name }}
           else
-            cp jumpchamp_gui ../../../${{ matrix.asset_name }}
+            cargo build --release --target ${{ matrix.target }} --bin jumpchamp_gui
+            cp target/${{ matrix.target }}/release/jumpchamp_gui ${{ matrix.asset_name }}
           fi
+        shell: bash
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
@@ -114,15 +120,22 @@ jobs:
             ## 🚀 Native Desktop GUI Executables (${{ steps.release_tag.outputs.tag }})
 
             Pre-compiled standalone desktop executables for **JumpChamp Prime Gap Explorer**.
-            Download the file for your platform, double-click, and run!
 
             ### 📦 Downloads:
+            - **macOS (Apple Silicon M1/M2/M3/M4)**: `JumpChamp-macos-arm64.app.zip` *(Double-clickable .app bundle)*
+            - **macOS (Intel x86_64)**: `JumpChamp-macos-intel-x86_64.app.zip` *(Double-clickable .app bundle)*
             - **Windows (64-bit)**: `jumpchamp_gui-windows-x86_64.exe`
-            - **macOS (Apple Silicon M1/M2/M3/M4)**: `jumpchamp_gui-macos-arm64`
-            - **macOS (Intel x86_64)**: `jumpchamp_gui-macos-intel-x86_64`
             - **Linux (x86_64)**: `jumpchamp_gui-linux-x86_64`
+
+            ---
+
+            ### 🍏 macOS First-Time Launch Instructions:
+            1. Download and double-click `JumpChamp-macos-arm64.app.zip` (or Intel version) to unzip.
+            2. **Right-click** (or Control-click) `JumpChamp.app`, select **Open**, and click **Open** on the security popup.
+            3. *Done!* Subsequent launches will work with a simple **double-click**.
           files: release-artifacts/*/*
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

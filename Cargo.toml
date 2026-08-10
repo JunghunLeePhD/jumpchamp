@@ -19,3 +19,11 @@ egui_plot = "0.30"
 crossbeam-channel = "0.5"
 rfd = "0.15"
 dirs = "5.0"
+
+[package.metadata.bundle]
+name = "JumpChamp"
+identifier = "com.jumpchamp.gui"
+version = "0.1.0"
+copyright = "Copyright (c) 2026"
+short_description = "JumpChamp Prime Gap Explorer"
+long_description = "Interactive desktop application for exploring prime gap distributions."
