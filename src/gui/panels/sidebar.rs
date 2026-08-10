@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::gui::state::{AppState, SortOrder};
+use crate::gui::theme;
 
 pub enum SidebarAction {
     None,
@@ -42,6 +43,7 @@ fn render_dual_range_slider(
     min_val: &mut u64,
     max_val: &mut u64,
     limit: u64,
+    is_dark: bool,
 ) -> egui::Response {
     let desired_size = egui::vec2(150.0, 18.0);
     let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::drag());
@@ -70,13 +72,14 @@ fn render_dual_range_slider(
         // 1. Draw Background Rail (Single Track)
         painter.line_segment(
             [egui::pos2(track_left, track_y), egui::pos2(track_right, track_y)],
-            egui::Stroke::new(4.0_f32, egui::Color32::from_rgb(45, 55, 75)),
+            egui::Stroke::new(4.0_f32, theme::slider_rail_bg(is_dark)),
         );
 
         // 2. Draw Active Range Fill Line
+        let accent = theme::accent_color(is_dark);
         painter.line_segment(
             [egui::pos2(x_min, track_y), egui::pos2(x_max, track_y)],
-            egui::Stroke::new(4.0_f32, egui::Color32::from_rgb(90, 200, 250)),
+            egui::Stroke::new(4.0_f32, accent),
         );
 
         // 3. Handle Pointer Dragging for Min & Max Thumbs
@@ -98,13 +101,13 @@ fn render_dual_range_slider(
         // 4. Draw Min Thumb
         let thumb_r = 6.0_f32;
         let min_circle = egui::pos2(x_min, track_y);
-        painter.circle_filled(min_circle, thumb_r, egui::Color32::from_rgb(220, 225, 235));
-        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(90, 200, 250)));
+        painter.circle_filled(min_circle, thumb_r, theme::card_bg(is_dark));
+        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, accent));
 
         // 5. Draw Max Thumb
         let max_circle = egui::pos2(x_max, track_y);
-        painter.circle_filled(max_circle, thumb_r, egui::Color32::from_rgb(90, 200, 250));
-        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
+        painter.circle_filled(max_circle, thumb_r, accent);
+        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, theme::text_primary(is_dark)));
     }
 
     response.on_hover_text(format!(
@@ -120,6 +123,7 @@ fn render_dual_top_range_slider(
     min_val: &mut usize,
     max_val: &mut usize,
     limit: usize,
+    is_dark: bool,
 ) -> egui::Response {
     let desired_size = egui::vec2(100.0, 18.0);
     let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::drag());
@@ -148,13 +152,14 @@ fn render_dual_top_range_slider(
         // 1. Draw Background Rail (Single Track)
         painter.line_segment(
             [egui::pos2(track_left, track_y), egui::pos2(track_right, track_y)],
-            egui::Stroke::new(4.0_f32, egui::Color32::from_rgb(45, 55, 75)),
+            egui::Stroke::new(4.0_f32, theme::slider_rail_bg(is_dark)),
         );
 
         // 2. Draw Active Range Fill Line
+        let top_fill_color = if is_dark { egui::Color32::from_rgb(255, 180, 0) } else { egui::Color32::from_rgb(220, 140, 0) };
         painter.line_segment(
             [egui::pos2(x_min, track_y), egui::pos2(x_max, track_y)],
-            egui::Stroke::new(4.0_f32, egui::Color32::from_rgb(255, 180, 0)),
+            egui::Stroke::new(4.0_f32, top_fill_color),
         );
 
         // 3. Handle Pointer Dragging for Min & Max Thumbs
@@ -176,13 +181,13 @@ fn render_dual_top_range_slider(
         // 4. Draw Min Thumb
         let thumb_r = 6.0_f32;
         let min_circle = egui::pos2(x_min, track_y);
-        painter.circle_filled(min_circle, thumb_r, egui::Color32::from_rgb(235, 235, 235));
-        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(255, 180, 0)));
+        painter.circle_filled(min_circle, thumb_r, theme::card_bg(is_dark));
+        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, top_fill_color));
 
         // 5. Draw Max Thumb
         let max_circle = egui::pos2(x_max, track_y);
-        painter.circle_filled(max_circle, thumb_r, egui::Color32::from_rgb(255, 180, 0));
-        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
+        painter.circle_filled(max_circle, thumb_r, top_fill_color);
+        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, theme::text_primary(is_dark)));
     }
 
     response.on_hover_text(format!(
@@ -234,7 +239,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             }
         }
 
-        render_dual_range_slider(ui, &mut state.min_val, &mut state.max_val, max_limit);
+        let is_dark = theme::is_dark(state.theme_mode);
+
+        render_dual_range_slider(ui, &mut state.min_val, &mut state.max_val, max_limit, is_dark);
 
         let max_speed = (state.max_val as f64 / 100.0).max(10.0);
         if ui
@@ -268,7 +275,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             state.top_min = state.top_min.clamp(1, state.top_max);
         }
 
-        render_dual_top_range_slider(ui, &mut state.top_min, &mut state.top_max, dynamic_top_max_limit);
+        render_dual_top_range_slider(ui, &mut state.top_min, &mut state.top_max, dynamic_top_max_limit, is_dark);
 
         if ui
             .add(egui::DragValue::new(&mut state.top_max).range(state.top_min..=dynamic_top_max_limit))

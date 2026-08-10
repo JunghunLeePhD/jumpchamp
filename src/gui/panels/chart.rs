@@ -5,9 +5,16 @@
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
 use crate::gui::panels::sidebar;
 use crate::gui::state::AppState;
-use crate::gui::theme::viridis_color;
+use crate::gui::theme::{self, viridis_color};
 
 pub fn render(ui: &mut egui::Ui, state: &AppState) {
+    let is_dark = theme::is_dark(state.theme_mode);
+    let accent = theme::accent_color(is_dark);
+    let text_pri = theme::text_primary(is_dark);
+    let text_sec = theme::text_secondary(is_dark);
+    let card_bg = theme::card_bg(is_dark);
+    let card_border = theme::card_border(is_dark);
+
     if state.freq_data.is_empty() && !state.is_loading && state.error_msg.is_none() {
         ui.vertical_centered(|ui| {
             ui.add_space(ui.available_height() * 0.35);
@@ -15,13 +22,13 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                 egui::RichText::new("🚀 Ready to Compute")
                     .size(24.0)
                     .strong()
-                    .color(egui::Color32::from_rgb(90, 200, 250)),
+                    .color(accent),
             );
             ui.add_space(8.0);
             ui.label(
                 egui::RichText::new("Configure your range parameters above and click ▶ Compute to start analysis.")
                     .size(15.0)
-                    .color(egui::Color32::from_rgb(180, 190, 210)),
+                    .color(text_sec),
             );
         });
         return;
@@ -105,7 +112,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                 PlotPoint::new(x_pos, prob + max_prob * 0.03),
                                 format!("{pct:.1}%"),
                             )
-                            .color(if is_hovered { egui::Color32::WHITE } else { egui::Color32::from_rgb(220, 225, 235) }),
+                            .color(if is_hovered { accent } else { text_pri }),
                         );
                     }
 
@@ -115,12 +122,12 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                             PlotPoint::new(x_pos, -max_prob * 0.04),
                             format!("{gap}"),
                         )
-                        .color(if is_hovered { egui::Color32::WHITE } else { egui::Color32::from_rgb(180, 190, 210) }),
+                        .color(if is_hovered { text_pri } else { text_sec }),
                     );
 
-                    // Expand width (0.78 -> 0.95) and add white outline stroke when hovered
+                    // Expand width (0.78 -> 0.95) and add accent outline stroke when hovered
                     let (bar_width, bar_stroke) = if is_hovered {
-                        (0.95, egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 255, 255)))
+                        (0.95, egui::Stroke::new(2.0_f32, accent))
                     } else {
                         (0.78, egui::Stroke::NONE)
                     };
@@ -134,17 +141,17 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
             // Draw 4 positive horizontal reference grid lines (if enabled)
             if state.show_grid_lines {
-                let grid_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 18);
+                let grid_c = theme::grid_color(is_dark);
                 for fraction in [0.25, 0.50, 0.75, 1.00] {
                     let y_val = max_prob * fraction;
                     let line_points = vec![[-0.5, y_val], [bars_len - 0.5, y_val]];
-                    plot_ui.line(Line::new(line_points).color(grid_color).width(1.0_f32));
+                    plot_ui.line(Line::new(line_points).color(grid_c).width(1.0_f32));
                 }
             }
 
             // Draw solid baseline at y = 0
-            let baseline_color = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40);
-            plot_ui.line(Line::new(vec![[-0.5, 0.0], [bars_len - 0.5, 0.0]]).color(baseline_color).width(1.5_f32));
+            let baseline_c = theme::baseline_color(is_dark);
+            plot_ui.line(Line::new(vec![[-0.5, 0.0], [bars_len - 0.5, 0.0]]).color(baseline_c).width(1.5_f32));
 
             plot_ui.bar_chart(BarChart::new(bars));
 
@@ -170,8 +177,8 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                         egui::Id::new("chart_hover_card"),
                         |ui| {
                             egui::Frame::none()
-                                .fill(egui::Color32::from_rgb(16, 20, 28))
-                                .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(60, 70, 90)))
+                                .fill(card_bg)
+                                .stroke(egui::Stroke::new(1.0_f32, card_border))
                                 .rounding(6.0_f32)
                                 .inner_margin(8.0_f32)
                                 .show(ui, |ui| {
@@ -179,18 +186,18 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                         egui::RichText::new(format!("📊 Gap {gap}"))
                                             .strong()
                                             .size(16.0)
-                                            .color(egui::Color32::from_rgb(90, 200, 250)),
+                                            .color(accent),
                                     );
                                     ui.label(
                                         egui::RichText::new(format!("Percentage: {pct:.2}%"))
                                             .strong()
                                             .size(15.0)
-                                            .color(egui::Color32::WHITE),
+                                            .color(text_pri),
                                     );
                                     ui.label(
                                         egui::RichText::new(format!("Count: {}", sidebar::format_thousands(count)))
                                             .size(14.0)
-                                            .color(egui::Color32::from_rgb(180, 190, 205)),
+                                            .color(text_sec),
                                     );
                                 });
                         },
@@ -212,8 +219,8 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
             .interactable(true)
             .show(&ctx, |ui| {
                 egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_unmultiplied(16, 20, 28, 230))
-                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(50, 65, 90)))
+                    .fill(card_bg)
+                    .stroke(egui::Stroke::new(1.0_f32, card_border))
                     .rounding(6.0_f32)
                     .inner_margin(6.0_f32)
                     .show(ui, |ui| {
@@ -247,7 +254,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                             painter.rect_stroke(
                                 bar_rect,
                                 2.0,
-                                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 85, 110)),
+                                egui::Stroke::new(1.0_f32, card_border),
                             );
 
                             // Multi-level ticks and scale text labels at 100%, 75%, 50%, 25%, 0%
@@ -266,7 +273,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                         egui::pos2(bar_rect.max.x, y_pos),
                                         egui::pos2(bar_rect.max.x + 4.0, y_pos),
                                     ],
-                                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(140, 155, 180)),
+                                    egui::Stroke::new(1.0_f32, card_border),
                                 );
 
                                 let count_val = (max_cnt as f64 * val_frac) as u64;
@@ -277,7 +284,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                     egui::Align2::LEFT_CENTER,
                                     text_str,
                                     egui::FontId::proportional(11.0),
-                                    egui::Color32::from_rgb(180, 195, 215),
+                                    text_sec,
                                 );
                             }
 

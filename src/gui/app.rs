@@ -16,16 +16,16 @@ pub struct JumpChampApp {
 
 impl JumpChampApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        apply_theme(&cc.egui_ctx);
-
         let (cmd_tx, cmd_rx) = unbounded();
         let (res_tx, res_rx) = unbounded();
 
         spawn_worker(cmd_rx, res_tx, cc.egui_ctx.clone());
 
-        Self {
+        let app = Self {
             state: AppState::new(cmd_tx, res_rx),
-        }
+        };
+        apply_theme(&cc.egui_ctx, app.state.theme_mode);
+        app
     }
 
     fn dispatch_compute(&mut self) {
@@ -52,6 +52,8 @@ impl JumpChampApp {
 
 impl App for JumpChampApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        apply_theme(ctx, self.state.theme_mode);
+
         while let Ok(result) = self.state.res_rx.try_recv() {
             match result {
                 WorkerResult::Metadata(m) => self.state.metadata = Some(m),

@@ -4,6 +4,12 @@
 
 use crossbeam_channel::{Receiver, Sender};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeMode {
+    Dark,
+    Light,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SortOrder {
     ByFrequency,
@@ -50,6 +56,7 @@ pub struct AppState {
 
     // Settings & Limits
     pub show_settings: bool,
+    pub theme_mode: ThemeMode,
     pub max_prime_limit: u64,
     pub max_k_limit: usize,
     pub show_grid_lines: bool,
@@ -82,6 +89,7 @@ impl AppState {
             sort_by: SortOrder::ByFrequency,
 
             show_settings: false,
+            theme_mode: ThemeMode::Dark,
             max_prime_limit: 10_000_000_000, // Default 10B (10 Billion)
             max_k_limit: 3,                  // Default max k limit = 3
             show_grid_lines: true,
