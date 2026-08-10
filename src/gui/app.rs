@@ -27,20 +27,17 @@ impl JumpChampApp {
             state: AppState::new(cmd_tx, res_rx),
         };
 
-        if std::path::Path::new(&app.state.file_path).exists() {
-            app.dispatch_load();
-        }
+        app.dispatch_compute();
 
         app
     }
 
-    fn dispatch_load(&mut self) {
+    fn dispatch_compute(&mut self) {
         self.state.is_loading = true;
         self.state.progress = 0.0;
         self.state.error_msg = None;
 
-        let cmd = WorkerCommand::LoadParquet {
-            path: self.state.file_path.clone(),
+        let cmd = WorkerCommand::ComputeGaps {
             min_idx: self.state.min_idx,
             max_idx: self.state.max_idx,
             k: self.state.k,
@@ -50,31 +47,9 @@ impl JumpChampApp {
         self.state.cmd_tx.send(cmd).ok();
     }
 
-    fn dispatch_generate_database(&mut self) {
-        self.state.is_loading = true;
-        self.state.progress = 0.0;
-        self.state.error_msg = None;
-
-        let cmd = WorkerCommand::GenerateDatabase {
-            limit: 10_000_000,
-            k: self.state.k,
-        };
-        self.state.cmd_tx.send(cmd).ok();
-    }
-
     fn dispatch_cancel(&mut self) {
         self.state.cmd_tx.send(WorkerCommand::Cancel).ok();
         self.state.is_loading = false;
-    }
-
-    fn open_file_picker(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Parquet Files", &["parquet"])
-            .pick_file()
-        {
-            self.state.file_path = path.to_string_lossy().into_owned();
-            self.dispatch_load();
-        }
     }
 }
 
@@ -101,7 +76,7 @@ impl App for JumpChampApp {
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("⚡ Engine: Zero-Copy Parquet Stream");
+                ui.label("⚡ Engine: In-Memory Parallel Segmented Sieve");
                 ui.separator();
                 let latency_str = self
                     .state
@@ -115,10 +90,8 @@ impl App for JumpChampApp {
         egui::TopBottomPanel::top("control_bar")
             .resizable(false)
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
-                SidebarAction::Load => self.dispatch_load(),
+                SidebarAction::Compute => self.dispatch_compute(),
                 SidebarAction::Cancel => self.dispatch_cancel(),
-                SidebarAction::OpenFilePicker => self.open_file_picker(),
-                SidebarAction::GenerateDatabase => self.dispatch_generate_database(),
                 SidebarAction::None => {}
             });
 

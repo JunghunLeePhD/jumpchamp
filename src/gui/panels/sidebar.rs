@@ -6,10 +6,8 @@ use crate::gui::state::{AppState, SortOrder};
 
 pub enum SidebarAction {
     None,
-    Load,
+    Compute,
     Cancel,
-    OpenFilePicker,
-    GenerateDatabase,
 }
 
 fn render_dual_range_slider(
@@ -88,44 +86,32 @@ fn render_dual_range_slider(
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
 
-    let max_limit = state
-        .metadata
-        .as_ref()
-        .map(|m| m.total_rows)
-        .unwrap_or(10_000_000);
+    let max_limit = 50_000_000u64;
 
     ui.add_space(2.0);
     // Non-wrapping single horizontal line container
     ui.horizontal(|ui| {
-        // Group 1: Dataset File Picker
-        ui.label("📂 File:");
-        ui.add(egui::TextEdit::singleline(&mut state.file_path).desired_width(120.0));
-        if ui.button("…").on_hover_text("Browse for .parquet file").clicked() {
-            action = SidebarAction::OpenFilePicker;
-        }
-
-        let file_exists = std::path::Path::new(&state.file_path).exists();
-        if !file_exists {
-            if ui
-                .button(egui::RichText::new("⚙️ Generate Local DB").strong().color(egui::Color32::from_rgb(90, 200, 250)))
-                .on_hover_text("Generate prime & gap database (10M primes) directly in app data directory")
-                .clicked()
-            {
-                action = SidebarAction::GenerateDatabase;
-            }
+        // Group 1: Gap order k parameter
+        ui.label("k:");
+        if ui
+            .add(egui::DragValue::new(&mut state.k).range(1..=20))
+            .on_hover_text("Gap order k (e.g. k=1 for consecutive prime gaps)")
+            .changed()
+        {
+            action = SidebarAction::Compute;
         }
 
         ui.separator();
-        // Group 2: Sort Order (Right next to File option)
+        // Group 2: Sort Order
         if ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq").changed() {
-            action = SidebarAction::Load;
+            action = SidebarAction::Compute;
         }
         if ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap").changed() {
-            action = SidebarAction::Load;
+            action = SidebarAction::Compute;
         }
 
         ui.separator();
-        // Group 3: Clean Index Range (No text clutter)
+        // Group 3: Clean Index Range
         if ui.add(egui::DragValue::new(&mut state.min_idx).speed(100_000)).changed() {
             state.min_idx = state.min_idx.clamp(1, max_limit);
             if state.min_idx > state.max_idx {
@@ -143,13 +129,13 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         }
 
         ui.separator();
-        // Group 4: Clean Top N Slider (No text label)
+        // Group 4: Clean Top N Slider
         if ui.add_sized([70.0_f32, 18.0_f32], egui::Slider::new(&mut state.top_n, 5..=200)).changed() {
-            action = SidebarAction::Load;
+            action = SidebarAction::Compute;
         }
 
         ui.separator();
-        // Group 5: Action Button / Progress Bar (Strict 1 Line)
+        // Group 5: Action Button / Progress Bar
         if state.is_loading {
             ui.add_sized(
                 [80.0_f32, 18.0_f32],
@@ -158,10 +144,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             if ui.button("✖ Cancel").clicked() {
                 action = SidebarAction::Cancel;
             }
-        } else if ui.button("▶ Load").clicked() {
-            action = SidebarAction::Load;
+        } else if ui.button("▶ Compute").clicked() {
+            action = SidebarAction::Compute;
         }
-
     });
     ui.add_space(2.0);
 

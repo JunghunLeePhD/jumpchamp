@@ -19,20 +19,13 @@ pub struct DatasetMetadata {
     pub max_gap: u16,
 }
 
-use crate::config::default_gaps_path;
-
 pub enum WorkerCommand {
-    LoadParquet {
-        path: String,
+    ComputeGaps {
         min_idx: u64,
         max_idx: u64,
         k: usize,
         top_n: usize,
         sort_by: SortOrder,
-    },
-    GenerateDatabase {
-        limit: usize,
-        k: usize,
     },
     Cancel,
 }
@@ -47,7 +40,6 @@ pub enum WorkerResult {
 
 pub struct AppState {
     // Controls
-    pub file_path: String,
     pub k: usize,
     pub min_idx: u64,
     pub max_idx: u64,
@@ -71,17 +63,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
-        let default_app_db = default_gaps_path(2);
-        let initial_path = if default_app_db.exists() {
-            default_app_db.to_string_lossy().into_owned()
-        } else if std::path::Path::new("gaps2.parquet").exists() {
-            "gaps2.parquet".to_string()
-        } else {
-            default_app_db.to_string_lossy().into_owned()
-        };
-
         Self {
-            file_path: initial_path,
             k: 2,
             min_idx: 1,
             max_idx: 1_000_000,
