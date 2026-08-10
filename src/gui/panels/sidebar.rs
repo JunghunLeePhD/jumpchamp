@@ -219,7 +219,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         // Group 3: Numerical Prime Value Range [N_min, N_max]
         let min_speed = (state.min_val as f64 / 100.0).max(10.0);
         if ui
-            .add(
+            .add_sized(
+                [85.0_f32, 18.0_f32],
                 egui::DragValue::new(&mut state.min_val)
                     .speed(min_speed)
                     .range(1..=max_limit),
@@ -237,7 +238,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         let max_speed = (state.max_val as f64 / 100.0).max(10.0);
         if ui
-            .add(
+            .add_sized(
+                [85.0_f32, 18.0_f32],
                 egui::DragValue::new(&mut state.max_val)
                     .speed(max_speed)
                     .range(1..=max_limit),
