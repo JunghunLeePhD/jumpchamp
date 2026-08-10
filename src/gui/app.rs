@@ -23,13 +23,9 @@ impl JumpChampApp {
 
         spawn_worker(cmd_rx, res_tx, cc.egui_ctx.clone());
 
-        let mut app = Self {
+        Self {
             state: AppState::new(cmd_tx, res_rx),
-        };
-
-        app.dispatch_compute();
-
-        app
+        }
     }
 
     fn dispatch_compute(&mut self) {

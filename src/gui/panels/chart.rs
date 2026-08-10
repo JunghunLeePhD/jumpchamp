@@ -8,6 +8,25 @@ use crate::gui::state::AppState;
 use crate::gui::theme::viridis_color;
 
 pub fn render(ui: &mut egui::Ui, state: &AppState) {
+    if state.freq_data.is_empty() && !state.is_loading && state.error_msg.is_none() {
+        ui.vertical_centered(|ui| {
+            ui.add_space(ui.available_height() * 0.35);
+            ui.label(
+                egui::RichText::new("🚀 Ready to Compute")
+                    .size(24.0)
+                    .strong()
+                    .color(egui::Color32::from_rgb(90, 200, 250)),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Configure your range parameters above and click ▶ Compute to start analysis.")
+                    .size(15.0)
+                    .color(egui::Color32::from_rgb(180, 190, 210)),
+            );
+        });
+        return;
+    }
+
     let total_gaps = state.freq_data.len();
     let start_idx = (state.top_min.saturating_sub(1)).min(total_gaps);
     let end_idx = state.top_max.min(total_gaps).max(start_idx);
