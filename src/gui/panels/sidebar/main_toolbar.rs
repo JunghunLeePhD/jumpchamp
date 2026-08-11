@@ -18,9 +18,8 @@ fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
 
 /// Renders the gap order parameter `k` input control.
 fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) {
-    let max_k = state.max_k_limit;
     ui.label("k:");
-    ui.add(egui::DragValue::new(&mut state.k).range(1..=max_k));
+    ui.add(egui::DragValue::new(&mut state.k).range(1..=usize::MAX));
     ui.separator();
 }
 

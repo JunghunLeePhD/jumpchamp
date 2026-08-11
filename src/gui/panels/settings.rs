@@ -67,14 +67,6 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
                         state.max_prime_limit = 100_000_000_000;
                     }
                 });
-
-                ui.add_space(4.0);
-
-                ui.horizontal(|ui| {
-                    ui.label("Max Gap Step k Limit:");
-                    ui.add(egui::DragValue::new(&mut state.max_k_limit).range(1..=100));
-                    ui.label(format!("(Max k={})", state.max_k_limit));
-                });
             });
 
             ui.add_space(6.0);
