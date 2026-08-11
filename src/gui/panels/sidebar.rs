@@ -10,7 +10,9 @@ pub enum SidebarAction {
     Compute,
     Cancel,
     StartAnimation,
+    StartReverseAnimation,
     StepAnimation,
+    StepBackAnimation,
 }
 
 pub fn format_compact_num(val: u64) -> String {
@@ -324,21 +326,34 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                 state.is_precaching = false;
             }
         } else {
+            if ui
+                .button("◀ Reverse")
+                .on_hover_text("Play Cumulative Growth Animation Backward towards Min Prime")
+                .clicked()
+            {
+                action = SidebarAction::StartReverseAnimation;
+            }
+
             let play_label = if state.anim_current_val > state.min_val && state.anim_current_val < state.max_val {
-                "▶ Resume Animation"
+                "▶ Resume"
             } else {
-                "▶ Play Animation"
+                "▶ Play"
             };
             if ui
                 .button(play_label)
-                .on_hover_text("Pre-compute dataset and Play/Resume Cumulative Growth Animation")
+                .on_hover_text("Pre-compute dataset and Play/Resume Cumulative Growth Animation Forward")
                 .clicked()
             {
                 action = SidebarAction::StartAnimation;
             }
         }
 
-        if ui.button("⏭ Step").on_hover_text("Advance 1 animation step").clicked() {
+        if ui.button("⏮ Step Back").on_hover_text("Step backward 1 animation step").clicked() {
+            state.is_animating = false;
+            action = SidebarAction::StepBackAnimation;
+        }
+
+        if ui.button("⏭ Step").on_hover_text("Step forward 1 animation step").clicked() {
             state.is_animating = false;
             action = SidebarAction::StepAnimation;
         }

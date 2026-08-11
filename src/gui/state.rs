@@ -45,6 +45,12 @@ pub enum WorkerResult {
     Error(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayDirection {
+    Forward,
+    Reverse,
+}
+
 pub struct AppState {
     // Controls
     pub k: usize,
@@ -66,6 +72,7 @@ pub struct AppState {
     // Animation Controls (Cumulative Linear Growth)
     pub is_animating: bool,
     pub is_precaching: bool,
+    pub anim_direction: PlayDirection,
     pub anim_current_val: u64,
     pub anim_step_size: u64,
     pub anim_speed_fps: f32,
@@ -111,6 +118,7 @@ impl AppState {
 
             is_animating: false,
             is_precaching: false,
+            anim_direction: PlayDirection::Forward,
             anim_current_val: default_step,
             anim_step_size: default_step,
             anim_speed_fps: 5.0,

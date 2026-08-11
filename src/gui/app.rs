@@ -60,6 +60,7 @@ impl JumpChampApp {
     }
 
     fn dispatch_step_animation(&mut self) {
+        self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
         if self.state.anim_current_val >= self.state.max_val {
             self.state.anim_current_val = self.state.min_val;
         } else {
@@ -69,7 +70,19 @@ impl JumpChampApp {
         self.dispatch_anim_frame();
     }
 
+    fn dispatch_step_back_animation(&mut self) {
+        self.state.anim_direction = crate::gui::state::PlayDirection::Reverse;
+        if self.state.anim_current_val <= self.state.min_val {
+            self.state.anim_current_val = self.state.max_val;
+        } else {
+            self.state.anim_current_val =
+                self.state.anim_current_val.saturating_sub(self.state.anim_step_size).max(self.state.min_val);
+        }
+        self.dispatch_anim_frame();
+    }
+
     fn dispatch_start_animation(&mut self) {
+        self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
         if self.state.anim_current_val > self.state.min_val && self.state.anim_current_val < self.state.max_val {
             self.state.is_animating = true;
             self.state.is_precaching = false;
@@ -87,12 +100,23 @@ impl JumpChampApp {
                 min_val: self.state.min_val,
                 max_val: self.state.max_val,
                 k: self.state.k,
-                top_min: self.state.top_min,
-                top_max: self.state.top_max,
+                top_min: 1,
+                top_max: usize::MAX,
                 sort_by: self.state.sort_by.clone(),
             };
             self.state.cmd_tx.send(cmd).ok();
         }
+    }
+
+    fn dispatch_start_reverse_animation(&mut self) {
+        self.state.anim_direction = crate::gui::state::PlayDirection::Reverse;
+        if self.state.anim_current_val <= self.state.min_val {
+            self.state.anim_current_val = self.state.max_val;
+        }
+        self.state.is_animating = true;
+        self.state.is_precaching = false;
+        self.state.last_frame_instant = None;
+        self.dispatch_anim_frame();
     }
 
     fn dispatch_cancel(&mut self) {
@@ -152,12 +176,25 @@ impl App for JumpChampApp {
 
             if should_step {
                 self.state.last_frame_instant = Some(now);
-                if self.state.anim_current_val >= self.state.max_val {
-                    self.state.is_animating = false;
-                } else {
-                    self.state.anim_current_val =
-                        (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
-                    self.dispatch_anim_frame();
+                match self.state.anim_direction {
+                    crate::gui::state::PlayDirection::Forward => {
+                        if self.state.anim_current_val >= self.state.max_val {
+                            self.state.is_animating = false;
+                        } else {
+                            self.state.anim_current_val =
+                                (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
+                            self.dispatch_anim_frame();
+                        }
+                    }
+                    crate::gui::state::PlayDirection::Reverse => {
+                        if self.state.anim_current_val <= self.state.min_val {
+                            self.state.is_animating = false;
+                        } else {
+                            self.state.anim_current_val =
+                                self.state.anim_current_val.saturating_sub(self.state.anim_step_size).max(self.state.min_val);
+                            self.dispatch_anim_frame();
+                        }
+                    }
                 }
             }
             ctx.request_repaint_after(target_delay);
@@ -174,8 +211,13 @@ impl App for JumpChampApp {
                         sidebar::format_compact_num(self.state.max_val)
                     ));
                 } else if self.state.is_animating {
+                    let dir_str = match self.state.anim_direction {
+                        crate::gui::state::PlayDirection::Forward => "▶ FORWARD",
+                        crate::gui::state::PlayDirection::Reverse => "◀ REVERSE",
+                    };
                     ui.label(format!(
-                        "🎬 ANIMATING: {} ~ {} (Bound: {})",
+                        "🎬 ANIMATING ({}): {} ~ {} (Bound: {})",
+                        dir_str,
                         sidebar::format_compact_num(self.state.min_val),
                         sidebar::format_compact_num(self.state.max_val),
                         sidebar::format_compact_num(self.state.anim_current_val)
@@ -206,7 +248,9 @@ impl App for JumpChampApp {
                 SidebarAction::Compute => self.dispatch_compute(),
                 SidebarAction::Cancel => self.dispatch_cancel(),
                 SidebarAction::StartAnimation => self.dispatch_start_animation(),
+                SidebarAction::StartReverseAnimation => self.dispatch_start_reverse_animation(),
                 SidebarAction::StepAnimation => self.dispatch_step_animation(),
+                SidebarAction::StepBackAnimation => self.dispatch_step_back_animation(),
                 SidebarAction::None => {}
             });
 
