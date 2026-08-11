@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender};
@@ -98,8 +97,13 @@ fn run_compute_with_cache(
     let total_blocks = ((sieve_high - 2) / block_size).max(1);
     let mut current_block = 0usize;
 
-    let mut window: VecDeque<(u64, u64)> = VecDeque::with_capacity(k + 1); // (prime_idx, prime_val)
+    // Zero-allocation stack ring-buffer for windowing up to k=16
+    let mut ring_buf = [(0u64, 0u64); 16]; // (prime_idx, prime_val)
+    let mut head = 0usize;
+    let mut count_in_buf = 0usize;
     let mut prime_idx = 0u64;
+
+    let mut last_progress_time = std::time::Instant::now();
 
     for block in stream_prime_blocks_range(2, sieve_high, block_size, &base_primes) {
         if cancel_flag.load(Ordering::SeqCst) {
@@ -107,18 +111,28 @@ fn run_compute_with_cache(
         }
 
         current_block += 1;
-        let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
-        res_tx.send(WorkerResult::Progress(prog)).ok();
-        ctx.request_repaint();
+        if last_progress_time.elapsed().as_millis() >= 33 || current_block == total_blocks {
+            last_progress_time = std::time::Instant::now();
+            let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
+            res_tx.send(WorkerResult::Progress(prog)).ok();
+            ctx.request_repaint();
+        }
 
         for p in block {
             prime_idx += 1;
             if prime_idx > max_val + (k as u64) {
                 break;
             }
-            window.push_back((prime_idx, p));
-            if window.len() == k + 1 {
-                let (idx_start, p_start) = window.pop_front().unwrap();
+
+            ring_buf[head] = (prime_idx, p);
+            head = (head + 1) % 16;
+            if count_in_buf < k + 1 {
+                count_in_buf += 1;
+            }
+
+            if count_in_buf == k + 1 {
+                let tail = (head + 16 - (k + 1)) % 16;
+                let (idx_start, p_start) = ring_buf[tail];
                 if idx_start >= min_val && prime_idx <= max_val {
                     let deltak = (p - p_start) as usize;
                     if deltak < 65536 {
