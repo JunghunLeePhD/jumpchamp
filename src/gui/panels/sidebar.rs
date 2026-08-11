@@ -268,9 +268,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         ui.separator();
         // Group 4: Dynamic Min/Max Range Slider (Bounded by unique gaps found in range)
-        let dynamic_top_max_limit = state.freq_data.len().max(5);
+        let max_slider_limit = state.freq_data.len().max(20).max(state.top_max);
         state.top_min = state.top_min.clamp(1, state.top_max);
-        state.top_max = state.top_max.clamp(state.top_min, dynamic_top_max_limit);
 
         ui.label("Rank:");
         if ui
@@ -281,14 +280,14 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             state.top_min = state.top_min.clamp(1, state.top_max);
         }
 
-        render_dual_top_range_slider(ui, &mut state.top_min, &mut state.top_max, dynamic_top_max_limit, is_dark);
+        render_dual_top_range_slider(ui, &mut state.top_min, &mut state.top_max, max_slider_limit, is_dark);
 
         if ui
-            .add(egui::DragValue::new(&mut state.top_max).range(state.top_min..=dynamic_top_max_limit))
+            .add(egui::DragValue::new(&mut state.top_max).range(state.top_min..=max_slider_limit))
             .on_hover_text("Rank Max (N_max)")
             .changed()
         {
-            state.top_max = state.top_max.clamp(state.top_min, dynamic_top_max_limit);
+            state.top_max = state.top_max.clamp(state.top_min, max_slider_limit);
         }
 
         ui.separator();
