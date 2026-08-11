@@ -360,7 +360,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         if ui.button("↺ Reset").on_hover_text("Reset animation bound to Min Prime value").clicked() {
             state.is_animating = false;
             state.anim_current_val = state.min_val;
-            action = SidebarAction::Compute;
+            action = SidebarAction::StepAnimation;
         }
 
         ui.separator();
