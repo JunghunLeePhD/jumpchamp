@@ -2,9 +2,9 @@
 // Top Control Bar — User Controls & Single-Track Dual-Thumb Range Slider
 // ============================================================================
 
-use crate::gui::state::{AppState, SortOrder};
+use crate::gui::state::{AppState};
 use crate::gui::theme;
-use crate::gui::utils::{format_compact_num, format_thousands};
+use crate::gui::utils::{format_compact_num};
 
 pub enum SidebarAction {
     None,
@@ -144,23 +144,17 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         // Group 0: Settings Button (Front Position)
-        if ui.button("⚙ Settings").on_hover_text("Open Settings Window").clicked() {
+        if ui.button("⚙ Settings").clicked() {
             state.show_settings = !state.show_settings;
         }
-
         ui.separator();
+
         // Group 1: Gap order k parameter
         ui.label("k:");
-        ui.add(egui::DragValue::new(&mut state.k).range(1..=max_k))
-            .on_hover_text("Gap order k (e.g. k=1 for consecutive prime gaps)");
-
+        ui.add(egui::DragValue::new(&mut state.k).range(1..=max_k));
         ui.separator();
-        // Group 2: Sort Order
-        ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap");
-        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Rank");
 
-        ui.separator();
-        // Group 3: Numerical Prime Value Range [N_min, N_max]
+        // Group 2: Numerical Prime Value Range [N_min, N_max]
         let min_speed = (state.min_val as f64 / 100.0).max(10.0);
         if ui
             .add_sized(
@@ -170,7 +164,6 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                     .range(1..=max_limit)
                     .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Min Prime Index n_min (n-th prime): n = {}", format_thousands(state.min_val)))
             .changed()
         {
             state.min_val = state.min_val.clamp(1, max_limit);
@@ -195,7 +188,6 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                     .range(1..=max_limit)
                     .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Max Prime Index n_max (n-th prime): n = {}", format_thousands(state.max_val)))
             .changed()
         {
             state.max_val = state.max_val.clamp(1, max_limit);
@@ -204,16 +196,15 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             }
             state.recalculate_dynamic_step();
         }
-
         ui.separator();
-        // Group 4: Dynamic Min/Max Range Slider (Bounded by unique gaps found in range)
+
+        // Group 3: Dynamic Min/Max Range Slider (Bounded by unique gaps found in range)
         let max_slider_limit = state.freq_data.len().max(20).max(state.top_max);
         state.top_min = state.top_min.clamp(1, state.top_max);
 
         ui.label("Rank:");
         if ui
             .add(egui::DragValue::new(&mut state.top_min).range(1..=state.top_max))
-            .on_hover_text("Rank Min (N_min)")
             .changed()
         {
             state.top_min = state.top_min.clamp(1, state.top_max);
@@ -223,22 +214,18 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         if ui
             .add(egui::DragValue::new(&mut state.top_max).range(state.top_min..=max_slider_limit))
-            .on_hover_text("Rank Max (N_max)")
             .changed()
         {
             state.top_max = state.top_max.clamp(state.top_min, max_slider_limit);
         }
-
         ui.separator();
-        // Group 5: Action Button / Progress Bar
+
+        // Group 4: Action Button / Progress Bar
         if state.is_loading && !state.is_animating {
             ui.add_sized(
                 [80.0_f32, 18.0_f32],
                 egui::ProgressBar::new(state.progress).show_percentage(),
             );
-            if state.total_blocks > 0 {
-                ui.label(format!("{}/{}", state.current_block, state.total_blocks));
-            }
             if ui.button("✖ Cancel").clicked() {
                 action = SidebarAction::Cancel;
             }
@@ -246,44 +233,24 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             action = SidebarAction::Compute;
         }
     });
-
     ui.add_space(2.0);
     ui.separator();
 
-    // Group 6: Animation Toolbar Row (Cumulative Growth Animation)
+    // Group 5: Animation Toolbar Row (Cumulative Growth Animation)
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("🎬 Animation:").strong());
+        ui.label(egui::RichText::new("🎬").strong());
 
-        if state.is_precaching {
-            ui.label("⚡ Pre-caching:");
-            ui.add_sized(
-                [80.0_f32, 18.0_f32],
-                egui::ProgressBar::new(state.progress).show_percentage(),
-            );
-            if state.total_blocks > 0 {
-                ui.label(format!("[Block {}/{}]", state.current_block, state.total_blocks));
-            }
-        } else if state.is_animating {
-            let anim_prog = state.animation_progress();
-            ui.add_sized(
-                [80.0_f32, 18.0_f32],
-                egui::ProgressBar::new(anim_prog).show_percentage(),
-            );
-        }
-
-        if state.is_animating || state.is_precaching {
+        if state.is_animating {
             if ui
                 .button("⏸ Pause")
                 .on_hover_text("Pause Growth Chart Animation")
                 .clicked()
             {
                 state.is_animating = false;
-                state.is_precaching = false;
             }
         } else {
             if ui
                 .button("◀ Reverse")
-                .on_hover_text("Play Cumulative Growth Animation Backward towards Min Prime")
                 .clicked()
             {
                 action = SidebarAction::StartReverseAnimation;
@@ -296,33 +263,30 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             };
             if ui
                 .button(play_label)
-                .on_hover_text("Pre-compute dataset and Play/Resume Cumulative Growth Animation Forward")
                 .clicked()
             {
                 action = SidebarAction::StartAnimation;
             }
         }
 
-        if ui.button("⏮ Step Back").on_hover_text("Step backward 1 animation step").clicked() {
+        if ui.button("⏮ Step Back").clicked() {
             state.is_animating = false;
             action = SidebarAction::StepBackAnimation;
         }
 
-        if ui.button("⏭ Step").on_hover_text("Step forward 1 animation step").clicked() {
+        if ui.button("⏭ Step").clicked() {
             state.is_animating = false;
             action = SidebarAction::StepAnimation;
         }
 
-        if ui.button("↺ Reset").on_hover_text("Reset animation bound to Min Prime value").clicked() {
+        if ui.button("↺ Reset").clicked() {
             state.is_animating = false;
             state.anim_current_val = state.min_val;
             action = SidebarAction::StepAnimation;
         }
-
         ui.separator();
 
-        // Bound DragValue Input (Matching N_max widget size [85.0, 18.0])
-        ui.label("Bound:");
+        ui.label("Current:");
         let bound_speed = (state.max_val as f64 / 100.0).max(10.0);
         if ui
             .add_sized(
@@ -332,7 +296,6 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                     .range(state.min_val..=state.max_val)
                     .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Animation Prime Bound: {}", format_thousands(state.anim_current_val)))
             .changed()
         {
             state.anim_current_val = state.anim_current_val.clamp(state.min_val, state.max_val);
@@ -340,10 +303,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                 action = SidebarAction::StepAnimation;
             }
         }
-
         ui.separator();
 
-        // Step size DragValue Input (Matching N_max widget size [85.0, 18.0])
         ui.label("Step:");
         let prime_range = state.max_val.saturating_sub(state.min_val).max(50);
         let dynamic_step_speed = (prime_range as f64 / 500.0).max(1.0);
@@ -353,9 +314,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                 .speed(dynamic_step_speed)
                 .range(1..=prime_range)
                 .custom_formatter(|v, _| format_compact_num(v as u64)),
-        )
-        .on_hover_text("Prime index additive step increment per frame (dynamically scaled)");
-
+        );
         ui.separator();
 
         // Speed FPS Slider
@@ -364,8 +323,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             egui::Slider::new(&mut state.anim_speed_fps, 1.0..=30.0)
                 .suffix(" FPS")
                 .show_value(true),
-        )
-        .on_hover_text("Animation frame rate in frames per second");
+        );
     });
     ui.add_space(2.0);
 
