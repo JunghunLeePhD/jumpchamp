@@ -115,10 +115,9 @@ fn render_dual_range_slider(
     }
 
     response.on_hover_text(format!(
-        "Prime Numerical Range: {} ~ {} ({})",
+        "Prime Index Range: n = {} ~ {} (p_n_min ~ p_n_max)",
         format_compact_num(*min_val),
-        format_compact_num(*max_val),
-        format!("{}..{}", min_val, max_val)
+        format_compact_num(*max_val)
     ))
 }
 
@@ -235,7 +234,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                     .range(1..=max_limit)
                     .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Min Prime Value N_min: {}", format_thousands(state.min_val)))
+            .on_hover_text(format!("Min Prime Index n_min (n-th prime): n = {}", format_thousands(state.min_val)))
             .changed()
         {
             state.min_val = state.min_val.clamp(1, max_limit);
@@ -260,7 +259,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                     .range(1..=max_limit)
                     .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Max Prime Value N_max: {}", format_thousands(state.max_val)))
+            .on_hover_text(format!("Max Prime Index n_max (n-th prime): n = {}", format_thousands(state.max_val)))
             .changed()
         {
             state.max_val = state.max_val.clamp(1, max_limit);

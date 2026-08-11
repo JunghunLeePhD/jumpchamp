@@ -97,21 +97,21 @@ pub struct AppState {
 impl AppState {
     pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
         let min_v = 1u64;
-        let max_v = 10_000_000_000u64;
+        let max_v = 1_000_000u64;
         let default_step = (max_v.saturating_sub(min_v) / 50).max(1);
 
         Self {
             k: 2,
             min_val: min_v,
-            max_val: max_v, // Default 10B (10 Billion)
+            max_val: max_v, // Default 1 Million Primes (n = 1 ~ 1,000,000)
             top_min: 1,
             top_max: 20,
             sort_by: SortOrder::ByGapSize, // Default to Gap Mode (Fixed Numerical Order)
 
             show_settings: false,
             theme_mode: ThemeMode::Dark,
-            max_prime_limit: 10_000_000_000, // Default 10B (10 Billion)
-            max_k_limit: 3,                  // Default max k limit = 3
+            max_prime_limit: 10_000_000, // Default 10 Million Primes Limit
+            max_k_limit: 3,              // Default max k limit = 3
             show_grid_lines: true,
             show_pct_labels: true,
             show_heatmap_meter: true,

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender};
@@ -6,12 +6,21 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
 use crate::sieve::{small_primes, stream_prime_blocks_range};
 
-const SEGMENT_SIZE: u64 = 5_000_000;
-
-#[derive(Default)]
-struct SegmentCache {
-    // Key: (segment_index, k_step) -> Value: 65,536-entry gap frequency histogram
-    store: HashMap<(u64, usize), Vec<u64>>,
+fn nth_prime_upper_bound(n: u64) -> u64 {
+    if n <= 5 {
+        match n {
+            0 | 1 => 3,
+            2 => 5,
+            3 => 7,
+            4 => 11,
+            _ => 13,
+        }
+    } else {
+        let nf = n as f64;
+        let ln_n = nf.ln();
+        let ln_ln_n = ln_n.ln().max(0.1);
+        (nf * (ln_n + ln_ln_n)).ceil() as u64 + 1000
+    }
 }
 
 pub fn spawn_worker(
@@ -21,7 +30,6 @@ pub fn spawn_worker(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let cancel_flag = Arc::new(AtomicBool::new(false));
-        let mut cache = SegmentCache::default();
 
         loop {
             match cmd_rx.recv() {
@@ -44,7 +52,6 @@ pub fn spawn_worker(
                         top_min,
                         top_max,
                         sort_by,
-                        &mut cache,
                         &res_tx,
                         &ctx,
                         &cancel_flag,
@@ -66,7 +73,6 @@ fn run_compute_with_cache(
     _top_min: usize,
     top_max: usize,
     sort_by: SortOrder,
-    cache: &mut SegmentCache,
     res_tx: &Sender<WorkerResult>,
     ctx: &egui::Context,
     cancel_flag: &AtomicBool,
@@ -84,86 +90,45 @@ fn run_compute_with_cache(
         }))
         .ok();
 
-    if max_val < SEGMENT_SIZE {
-        // Fast Direct Path for Small Ranges (< 5M): < 0.1 ms execution
-        let sieve_low = min_val.max(2) as usize;
-        let sieve_high = max_val.max(sieve_low as u64) as usize;
+    let sieve_high = nth_prime_upper_bound(max_val) as usize;
+    let sqrt_limit = (sieve_high as f64).sqrt() as usize;
+    let base_primes = small_primes(sqrt_limit.max(2));
 
-        let sqrt_limit = (sieve_high as f64).sqrt() as usize;
-        let base_primes = small_primes(sqrt_limit.max(2));
+    let block_size = if max_val >= 100_000_000 { 5_000_000usize } else { 1_000_000usize };
+    let total_blocks = ((sieve_high - 2) / block_size).max(1);
+    let mut current_block = 0usize;
 
-        let block_size = 500_000usize;
-        let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
+    let mut window: VecDeque<(u64, u64)> = VecDeque::with_capacity(k + 1); // (prime_idx, prime_val)
+    let mut prime_idx = 0u64;
 
-        for block in stream_prime_blocks_range(sieve_low, sieve_high, block_size, &base_primes) {
-            if cancel_flag.load(Ordering::SeqCst) {
-                return Ok(());
+    for block in stream_prime_blocks_range(2, sieve_high, block_size, &base_primes) {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        current_block += 1;
+        let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
+        res_tx.send(WorkerResult::Progress(prog)).ok();
+        ctx.request_repaint();
+
+        for p in block {
+            prime_idx += 1;
+            if prime_idx > max_val + (k as u64) {
+                break;
             }
-
-            for p in block {
-                window.push_back(p);
-                if window.len() == k + 1 {
-                    let p_start = window.pop_front().unwrap();
-                    if p_start >= min_val && p <= max_val {
-                        let deltak = (p - p_start) as usize;
-                        if deltak < 65536 {
-                            counts[deltak] += 1;
-                        }
+            window.push_back((prime_idx, p));
+            if window.len() == k + 1 {
+                let (idx_start, p_start) = window.pop_front().unwrap();
+                if idx_start >= min_val && prime_idx <= max_val {
+                    let deltak = (p - p_start) as usize;
+                    if deltak < 65536 {
+                        counts[deltak] += 1;
                     }
                 }
             }
         }
-    } else {
-        // Segmented Cache Path for Large Ranges (>= 5M): Fast cache-hit accumulation
-        let start_seg = min_val / SEGMENT_SIZE;
-        let end_seg = max_val / SEGMENT_SIZE;
-        let total_segs = (end_seg - start_seg + 1) as f32;
-
-        for (seg_step, seg_idx) in (start_seg..=end_seg).enumerate() {
-            if cancel_flag.load(Ordering::SeqCst) {
-                return Ok(());
-            }
-
-            let key = (seg_idx, k);
-            if !cache.store.contains_key(&key) {
-                let seg_low = (seg_idx * SEGMENT_SIZE).max(2) as usize;
-                let seg_high = ((seg_idx + 1) * SEGMENT_SIZE) as usize;
-
-                let sqrt_limit = (seg_high as f64).sqrt() as usize;
-                let base_primes = small_primes(sqrt_limit.max(2));
-
-                let mut seg_counts = vec![0u64; 65536];
-                let mut window: VecDeque<u64> = VecDeque::with_capacity(k + 1);
-
-                for block in stream_prime_blocks_range(seg_low, seg_high, 1_000_000, &base_primes) {
-                    for p in block {
-                        if cancel_flag.load(Ordering::SeqCst) {
-                            return Ok(());
-                        }
-                        window.push_back(p);
-                        if window.len() == k + 1 {
-                            let p_start = window.pop_front().unwrap();
-                            let deltak = (p - p_start) as usize;
-                            if deltak < 65536 {
-                                seg_counts[deltak] += 1;
-                            }
-                        }
-                    }
-                }
-                cache.store.insert(key, seg_counts);
-            }
-
-            if let Some(cached_vec) = cache.store.get(&key) {
-                for (g, &cnt) in cached_vec.iter().enumerate() {
-                    counts[g] += cnt;
-                }
-            }
-
-            if total_segs > 0.0 {
-                let prog = ((seg_step + 1) as f32 / total_segs).clamp(0.0, 0.99);
-                res_tx.send(WorkerResult::Progress(prog)).ok();
-                ctx.request_repaint();
-            }
+        if prime_idx > max_val + (k as u64) {
+            break;
         }
     }
 

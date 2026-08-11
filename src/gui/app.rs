@@ -206,7 +206,7 @@ impl App for JumpChampApp {
                 ui.separator();
                 if self.state.is_precaching {
                     ui.label(format!(
-                        "⚡ PRE-CACHING: {} ~ {} for 0-delay playback...",
+                        "⚡ PRE-CACHING: n = {} ~ {} for 0-delay playback...",
                         sidebar::format_compact_num(self.state.min_val),
                         sidebar::format_compact_num(self.state.max_val)
                     ));
@@ -216,7 +216,7 @@ impl App for JumpChampApp {
                         crate::gui::state::PlayDirection::Reverse => "◀ REVERSE",
                     };
                     ui.label(format!(
-                        "🎬 ANIMATING ({}): {} ~ {} (Bound: {})",
+                        "🎬 ANIMATING ({}): n = {} ~ {} (Bound: n = {})",
                         dir_str,
                         sidebar::format_compact_num(self.state.min_val),
                         sidebar::format_compact_num(self.state.max_val),
@@ -224,7 +224,7 @@ impl App for JumpChampApp {
                     ));
                 } else {
                     ui.label(format!(
-                        "📊 Range: {} ~ {} (k={}, Rank={}~{})",
+                        "📊 Prime Index Range: n = {} ~ {} (k={}, Rank={}~{})",
                         sidebar::format_compact_num(self.state.min_val),
                         sidebar::format_compact_num(self.state.max_val),
                         self.state.k,

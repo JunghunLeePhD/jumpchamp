@@ -44,21 +44,27 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
-                    ui.label("Max Prime Value:");
-                    ui.add(egui::DragValue::new(&mut state.max_prime_limit).speed(1_000_000_000).range(1_000_000..=1_000_000_000_000u64));
+                    ui.label("Max Prime Index Limit (n):");
+                    ui.add(egui::DragValue::new(&mut state.max_prime_limit).speed(10_000_000).range(1_000_000..=100_000_000_000u64));
                     ui.label(format!("({})", format_compact_num(state.max_prime_limit)));
                 });
 
                 ui.horizontal(|ui| {
                     ui.label("Quick Presets:");
+                    if ui.button("10M").clicked() {
+                        state.max_prime_limit = 10_000_000;
+                    }
+                    if ui.button("100M").clicked() {
+                        state.max_prime_limit = 100_000_000;
+                    }
+                    if ui.button("1B").clicked() {
+                        state.max_prime_limit = 1_000_000_000;
+                    }
                     if ui.button("10B").clicked() {
                         state.max_prime_limit = 10_000_000_000;
                     }
                     if ui.button("100B").clicked() {
                         state.max_prime_limit = 100_000_000_000;
-                    }
-                    if ui.button("1T").clicked() {
-                        state.max_prime_limit = 1_000_000_000_000;
                     }
                 });
 
