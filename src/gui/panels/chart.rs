@@ -3,9 +3,9 @@
 // ============================================================================
 
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
-use crate::gui::panels::sidebar;
 use crate::gui::state::AppState;
 use crate::gui::theme::{self, viridis_color};
+use crate::gui::utils::{format_compact_num, format_thousands};
 
 pub fn render(ui: &mut egui::Ui, state: &AppState) {
     let is_dark = theme::is_dark(state.theme_mode);
@@ -195,7 +195,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                             .color(text_pri),
                                     );
                                     ui.label(
-                                        egui::RichText::new(format!("Count: {}", sidebar::format_thousands(count)))
+                                        egui::RichText::new(format!("Count: {}", format_thousands(count)))
                                             .size(14.0)
                                             .color(text_sec),
                                     );
@@ -277,7 +277,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                 );
 
                                 let count_val = (max_cnt as f64 * val_frac) as u64;
-                                let text_str = sidebar::format_compact_num(count_val);
+                                let text_str = format_compact_num(count_val);
 
                                 painter.text(
                                     egui::pos2(bar_rect.max.x + 7.0, y_pos),
@@ -290,8 +290,8 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
                             response.on_hover_text(format!(
                                 "Vertical Count Heatmap Meter (Viridis)\nHigh (Top): {}\nLow (Bottom): {}",
-                                sidebar::format_thousands(max_cnt),
-                                sidebar::format_thousands(min_cnt)
+                                format_thousands(max_cnt),
+                                format_thousands(min_cnt)
                             ));
                         }
                     });

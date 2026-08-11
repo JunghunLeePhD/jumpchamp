@@ -2,9 +2,9 @@
 // Modal Settings Window Component
 // ============================================================================
 
-use crate::gui::panels::sidebar::format_compact_num;
 use crate::gui::state::{AppState, ThemeMode};
 use crate::gui::theme;
+use crate::gui::utils::format_compact_num;
 
 pub fn render(ctx: &egui::Context, state: &mut AppState) {
     if !state.show_settings {

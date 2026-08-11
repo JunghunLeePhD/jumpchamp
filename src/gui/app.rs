@@ -4,6 +4,7 @@ use eframe::App;
 use crate::gui::panels::{chart, settings, sidebar, sidebar::SidebarAction};
 use crate::gui::state::{AppState, WorkerCommand, WorkerResult};
 use crate::gui::theme::apply_theme;
+use crate::gui::utils::format_compact_num;
 use crate::gui::worker::spawn_worker;
 
 pub struct JumpChampApp {
@@ -59,13 +60,34 @@ impl JumpChampApp {
         self.state.cmd_tx.send(cmd).ok();
     }
 
+    fn advance_anim_forward(&mut self) -> bool {
+        if self.state.anim_current_val >= self.state.max_val {
+            self.state.is_animating = false;
+            false
+        } else {
+            self.state.anim_current_val =
+                (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
+            true
+        }
+    }
+
+    fn advance_anim_backward(&mut self) -> bool {
+        if self.state.anim_current_val <= self.state.min_val {
+            self.state.is_animating = false;
+            false
+        } else {
+            self.state.anim_current_val =
+                self.state.anim_current_val.saturating_sub(self.state.anim_step_size).max(self.state.min_val);
+            true
+        }
+    }
+
     fn dispatch_step_animation(&mut self) {
         self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
         if self.state.anim_current_val >= self.state.max_val {
             self.state.anim_current_val = self.state.min_val;
         } else {
-            self.state.anim_current_val =
-                (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
+            self.advance_anim_forward();
         }
         self.dispatch_anim_frame();
     }
@@ -75,8 +97,7 @@ impl JumpChampApp {
         if self.state.anim_current_val <= self.state.min_val {
             self.state.anim_current_val = self.state.max_val;
         } else {
-            self.state.anim_current_val =
-                self.state.anim_current_val.saturating_sub(self.state.anim_step_size).max(self.state.min_val);
+            self.advance_anim_backward();
         }
         self.dispatch_anim_frame();
     }
@@ -176,25 +197,12 @@ impl App for JumpChampApp {
 
             if should_step {
                 self.state.last_frame_instant = Some(now);
-                match self.state.anim_direction {
-                    crate::gui::state::PlayDirection::Forward => {
-                        if self.state.anim_current_val >= self.state.max_val {
-                            self.state.is_animating = false;
-                        } else {
-                            self.state.anim_current_val =
-                                (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
-                            self.dispatch_anim_frame();
-                        }
-                    }
-                    crate::gui::state::PlayDirection::Reverse => {
-                        if self.state.anim_current_val <= self.state.min_val {
-                            self.state.is_animating = false;
-                        } else {
-                            self.state.anim_current_val =
-                                self.state.anim_current_val.saturating_sub(self.state.anim_step_size).max(self.state.min_val);
-                            self.dispatch_anim_frame();
-                        }
-                    }
+                let stepped = match self.state.anim_direction {
+                    crate::gui::state::PlayDirection::Forward => self.advance_anim_forward(),
+                    crate::gui::state::PlayDirection::Reverse => self.advance_anim_backward(),
+                };
+                if stepped {
+                    self.dispatch_anim_frame();
                 }
             }
             ctx.request_repaint_after(target_delay);
@@ -207,8 +215,8 @@ impl App for JumpChampApp {
                 if self.state.is_precaching {
                     ui.label(format!(
                         "⚡ PRE-CACHING: n = {} ~ {} for 0-delay playback...",
-                        sidebar::format_compact_num(self.state.min_val),
-                        sidebar::format_compact_num(self.state.max_val)
+                        format_compact_num(self.state.min_val),
+                        format_compact_num(self.state.max_val)
                     ));
                 } else if self.state.is_animating {
                     let dir_str = match self.state.anim_direction {
@@ -218,15 +226,15 @@ impl App for JumpChampApp {
                     ui.label(format!(
                         "🎬 ANIMATING ({}): n = {} ~ {} (Bound: n = {})",
                         dir_str,
-                        sidebar::format_compact_num(self.state.min_val),
-                        sidebar::format_compact_num(self.state.max_val),
-                        sidebar::format_compact_num(self.state.anim_current_val)
+                        format_compact_num(self.state.min_val),
+                        format_compact_num(self.state.max_val),
+                        format_compact_num(self.state.anim_current_val)
                     ));
                 } else {
                     ui.label(format!(
                         "📊 Prime Index Range: n = {} ~ {} (k={}, Rank={}~{})",
-                        sidebar::format_compact_num(self.state.min_val),
-                        sidebar::format_compact_num(self.state.max_val),
+                        format_compact_num(self.state.min_val),
+                        format_compact_num(self.state.max_val),
                         self.state.k,
                         self.state.top_min,
                         self.state.top_max

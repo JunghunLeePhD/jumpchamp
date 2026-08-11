@@ -6,6 +6,16 @@ use crossbeam_channel::{Receiver, Sender};
 use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
 use crate::sieve::{small_primes, stream_prime_blocks_range};
 
+const HIST_SIZE: usize = 65_536;
+const RING_BUF_CAPACITY: usize = 16;
+const LARGE_RANGE_THRESHOLD: u64 = 100_000_000;
+const LARGE_BLOCK_SIZE: usize = 5_000_000;
+const SMALL_BLOCK_SIZE: usize = 1_000_000;
+const EXACT_THRESHOLD: u64 = 100_000;
+const PROGRESS_INTERVAL_MS: u128 = 33;
+const MIN_CHUNK_SIZE: u64 = 10_000;
+const MAX_CHUNK_SIZE: u64 = 1_000_000;
+
 fn nth_prime_upper_bound(n: u64) -> u64 {
     if n <= 5 {
         match n {
@@ -74,6 +84,91 @@ pub fn spawn_worker(
     })
 }
 
+fn sieve_and_cache(
+    min_val: u64,
+    max_val: u64,
+    k: usize,
+    chunk_size: u64,
+    cache: &mut SegmentCache,
+    counts: &mut [u64],
+    res_tx: &Sender<WorkerResult>,
+    ctx: &egui::Context,
+    cancel_flag: &AtomicBool,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let sieve_high = nth_prime_upper_bound(max_val) as usize;
+    let sqrt_limit = (sieve_high as f64).sqrt() as usize;
+    let base_primes = small_primes(sqrt_limit.max(2));
+
+    let block_size = if max_val >= LARGE_RANGE_THRESHOLD {
+        LARGE_BLOCK_SIZE
+    } else {
+        SMALL_BLOCK_SIZE
+    };
+    let total_blocks = ((sieve_high - 2) / block_size).max(1);
+    let mut current_block = 0usize;
+
+    let mut ring_buf = [(0u64, 0u64); RING_BUF_CAPACITY];
+    let mut head = 0usize;
+    let mut count_in_buf = 0usize;
+    let mut prime_idx = 0u64;
+
+    let mut current_chunk_idx = 0u64;
+    let mut chunk_hist = vec![0u64; HIST_SIZE];
+    let mut last_progress_time = std::time::Instant::now();
+
+    for block in stream_prime_blocks_range(2, sieve_high, block_size, &base_primes) {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+
+        current_block += 1;
+        if last_progress_time.elapsed().as_millis() >= PROGRESS_INTERVAL_MS || current_block == total_blocks {
+            last_progress_time = std::time::Instant::now();
+            let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
+            res_tx.send(WorkerResult::Progress(prog)).ok();
+            ctx.request_repaint();
+        }
+
+        for p in block {
+            prime_idx += 1;
+            if prime_idx > max_val + (k as u64) {
+                break;
+            }
+
+            ring_buf[head] = (prime_idx, p);
+            head = (head + 1) % RING_BUF_CAPACITY;
+            if count_in_buf < k + 1 {
+                count_in_buf += 1;
+            }
+
+            if count_in_buf == k + 1 {
+                let tail = (head + RING_BUF_CAPACITY - (k + 1)) % RING_BUF_CAPACITY;
+                let (idx_start, p_start) = ring_buf[tail];
+                let p_chunk = idx_start / chunk_size;
+
+                if p_chunk != current_chunk_idx {
+                    cache.chunks.insert((current_chunk_idx, k), chunk_hist.clone());
+                    chunk_hist.fill(0);
+                    current_chunk_idx = p_chunk;
+                }
+
+                if idx_start >= min_val && prime_idx <= max_val {
+                    let deltak = (p - p_start) as usize;
+                    if deltak < HIST_SIZE {
+                        counts[deltak] += 1;
+                        chunk_hist[deltak] += 1;
+                    }
+                }
+            }
+        }
+        if prime_idx > max_val + (k as u64) {
+            break;
+        }
+    }
+    cache.chunks.insert((current_chunk_idx, k), chunk_hist);
+    Ok(true)
+}
+
 fn run_compute_with_cache(
     min_val: u64,
     max_val: u64,
@@ -87,7 +182,7 @@ fn run_compute_with_cache(
     cancel_flag: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let start_time = std::time::Instant::now();
-    let mut counts = vec![0u64; 65536];
+    let mut counts = vec![0u64; HIST_SIZE];
 
     res_tx
         .send(WorkerResult::Metadata(DatasetMetadata {
@@ -98,11 +193,11 @@ fn run_compute_with_cache(
         }))
         .ok();
 
-    let chunk_size = (max_val / 100).clamp(10_000, 1_000_000);
+    let chunk_size = (max_val / 100).clamp(MIN_CHUNK_SIZE, MAX_CHUNK_SIZE);
     let start_chunk = min_val / chunk_size;
     let end_chunk = max_val / chunk_size;
 
-    let mut all_cached = max_val > 100_000;
+    let mut all_cached = max_val > EXACT_THRESHOLD;
     if all_cached {
         for c_idx in start_chunk..=end_chunk {
             if !cache.chunks.contains_key(&(c_idx, k)) {
@@ -122,74 +217,12 @@ fn run_compute_with_cache(
             }
         }
     } else {
-        // Stream & Cache Missing Chunks
-        let sieve_high = nth_prime_upper_bound(max_val) as usize;
-        let sqrt_limit = (sieve_high as f64).sqrt() as usize;
-        let base_primes = small_primes(sqrt_limit.max(2));
-
-        let block_size = if max_val >= 100_000_000 { 5_000_000usize } else { 1_000_000usize };
-        let total_blocks = ((sieve_high - 2) / block_size).max(1);
-        let mut current_block = 0usize;
-
-        let mut ring_buf = [(0u64, 0u64); 16];
-        let mut head = 0usize;
-        let mut count_in_buf = 0usize;
-        let mut prime_idx = 0u64;
-
-        let mut current_chunk_idx = 0u64;
-        let mut chunk_hist = vec![0u64; 65536];
-        let mut last_progress_time = std::time::Instant::now();
-
-        for block in stream_prime_blocks_range(2, sieve_high, block_size, &base_primes) {
-            if cancel_flag.load(Ordering::SeqCst) {
-                return Ok(());
-            }
-
-            current_block += 1;
-            if last_progress_time.elapsed().as_millis() >= 33 || current_block == total_blocks {
-                last_progress_time = std::time::Instant::now();
-                let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
-                res_tx.send(WorkerResult::Progress(prog)).ok();
-                ctx.request_repaint();
-            }
-
-            for p in block {
-                prime_idx += 1;
-                if prime_idx > max_val + (k as u64) {
-                    break;
-                }
-
-                ring_buf[head] = (prime_idx, p);
-                head = (head + 1) % 16;
-                if count_in_buf < k + 1 {
-                    count_in_buf += 1;
-                }
-
-                if count_in_buf == k + 1 {
-                    let tail = (head + 16 - (k + 1)) % 16;
-                    let (idx_start, p_start) = ring_buf[tail];
-                    let p_chunk = idx_start / chunk_size;
-
-                    if p_chunk != current_chunk_idx {
-                        cache.chunks.insert((current_chunk_idx, k), chunk_hist.clone());
-                        chunk_hist.fill(0);
-                        current_chunk_idx = p_chunk;
-                    }
-
-                    if idx_start >= min_val && prime_idx <= max_val {
-                        let deltak = (p - p_start) as usize;
-                        if deltak < 65536 {
-                            counts[deltak] += 1;
-                            chunk_hist[deltak] += 1;
-                        }
-                    }
-                }
-            }
-            if prime_idx > max_val + (k as u64) {
-                break;
-            }
+        let completed = sieve_and_cache(
+            min_val, max_val, k, chunk_size, cache, &mut counts, res_tx, ctx, cancel_flag,
+        )?;
+        if !completed {
+            return Ok(());
         }
-        cache.chunks.insert((current_chunk_idx, k), chunk_hist);
     }
 
     let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
