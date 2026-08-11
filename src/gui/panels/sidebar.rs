@@ -219,8 +219,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         ui.separator();
         // Group 2: Sort Order
-        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Freq");
         ui.radio_value(&mut state.sort_by, SortOrder::ByGapSize, "Gap");
+        ui.radio_value(&mut state.sort_by, SortOrder::ByFrequency, "Rank");
 
         ui.separator();
         // Group 3: Numerical Prime Value Range [N_min, N_max]

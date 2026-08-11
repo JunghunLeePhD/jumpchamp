@@ -98,7 +98,7 @@ impl AppState {
             max_val: max_v, // Default 10B (10 Billion)
             top_min: 1,
             top_max: 20,
-            sort_by: SortOrder::ByFrequency,
+            sort_by: SortOrder::ByGapSize, // Default to Gap Mode (Fixed Numerical Order)
 
             show_settings: false,
             theme_mode: ThemeMode::Dark,
