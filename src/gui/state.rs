@@ -74,6 +74,7 @@ pub struct AppState {
     // Data
     pub metadata: Option<DatasetMetadata>,
     pub freq_data: Vec<(u64, u64)>,
+    pub prev_rank_map: std::collections::HashMap<u64, usize>,
     pub query_latency_ms: Option<f64>,
 
     // Worker Status
@@ -117,6 +118,7 @@ impl AppState {
 
             metadata: None,
             freq_data: Vec::new(),
+            prev_rank_map: std::collections::HashMap::new(),
             query_latency_ms: None,
 
             is_loading: false,
@@ -126,6 +128,18 @@ impl AppState {
             cmd_tx,
             res_rx,
         }
+    }
+
+    pub fn update_freq_data(&mut self, new_freq: Vec<(u64, u64)>) {
+        if !self.freq_data.is_empty() {
+            self.prev_rank_map.clear();
+            for (rank, &(gap, _)) in self.freq_data.iter().enumerate() {
+                self.prev_rank_map.insert(gap, rank);
+            }
+        }
+        self.freq_data = new_freq;
+        self.top_min = 1;
+        self.top_max = self.freq_data.len().max(1);
     }
 
     pub fn recalculate_dynamic_step(&mut self) {

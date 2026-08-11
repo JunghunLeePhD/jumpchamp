@@ -110,13 +110,17 @@ impl App for JumpChampApp {
         while let Ok(result) = self.state.res_rx.try_recv() {
             match result {
                 WorkerResult::Metadata(m) => self.state.metadata = Some(m),
-                WorkerResult::FrequencyData(f) => self.state.freq_data = f,
+                WorkerResult::FrequencyData(f) => self.state.update_freq_data(f),
                 WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
 
                 WorkerResult::Progress(p) => {
                     self.state.progress = p;
                     if p >= 1.0 {
                         self.state.is_loading = false;
+                        if !self.state.freq_data.is_empty() {
+                            self.state.top_min = 1;
+                            self.state.top_max = self.state.freq_data.len().max(1);
+                        }
                         if self.state.is_precaching {
                             self.state.is_precaching = false;
                             self.state.is_animating = true;
