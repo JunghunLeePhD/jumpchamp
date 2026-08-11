@@ -104,6 +104,17 @@ fn render_speed_fps_slider(ui: &mut egui::Ui, state: &mut AppState) {
             .suffix(" FPS")
             .show_value(true),
     );
+    ui.separator();
+}
+
+/// Renders 300-frame progress counter label.
+fn render_frame_counter(ui: &mut egui::Ui, state: &AppState) {
+    let current_step = if state.anim_step_size > 0 {
+        ((state.anim_current_val.saturating_sub(state.min_val)) / state.anim_step_size).min(300) + 1
+    } else {
+        1
+    };
+    ui.label(egui::RichText::new(format!("Frame {}/300", current_step)).strong().color(egui::Color32::from_rgb(0, 180, 220)));
 }
 
 /// Renders the animation toolbar row.
@@ -123,6 +134,7 @@ pub fn render_anim_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
 
         render_step_size_input(ui, state);
         render_speed_fps_slider(ui, state);
+        render_frame_counter(ui, state);
     });
     ui.add_space(2.0);
 

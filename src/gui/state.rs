@@ -50,12 +50,21 @@ pub enum WorkerResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    Static,
+    Animation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayDirection {
     Forward,
     Reverse,
 }
 
 pub struct AppState {
+    // View Mode
+    pub view_mode: ViewMode,
+
     // Controls
     pub k: usize,
     pub min_val: u64,
@@ -102,9 +111,11 @@ impl AppState {
     pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
         let min_v = 1u64;
         let max_v = 1_000_000u64;
-        let default_step = (max_v.saturating_sub(min_v) / 50).max(1);
+        let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
         Self {
+            view_mode: ViewMode::Static,
+
             k: 2,
             min_val: min_v,
             max_val: max_v, // Default 1 Million Primes (n = 1 ~ 1,000,000)
@@ -122,7 +133,7 @@ impl AppState {
             is_animating: false,
             is_precaching: false,
             anim_direction: PlayDirection::Forward,
-            anim_current_val: default_step,
+            anim_current_val: min_v,
             anim_step_size: default_step,
             anim_speed_fps: 5.0,
             last_frame_instant: None,
@@ -156,7 +167,19 @@ impl AppState {
 
     pub fn recalculate_dynamic_step(&mut self) {
         let range = self.max_val.saturating_sub(self.min_val);
-        self.anim_step_size = (range / 50).max(1);
+        self.anim_step_size = (range / 300).max(1);
+    }
+
+    pub fn recalculate_anim_300_frames(&mut self) {
+        let range = self.max_val.saturating_sub(self.min_val);
+        self.anim_step_size = (range / 300).max(1);
+    }
+
+    pub fn set_view_mode(&mut self, mode: ViewMode) {
+        self.view_mode = mode;
+        if mode == ViewMode::Animation {
+            self.recalculate_anim_300_frames();
+        }
     }
 }
 

@@ -4,9 +4,20 @@
 
 use super::dual_slider::{render_dual_range_slider, render_dual_top_range_slider};
 use super::SidebarAction;
-use crate::gui::state::AppState;
+use crate::gui::state::{AppState, ViewMode};
 use crate::gui::theme;
 use crate::gui::utils::format_compact_num;
+
+/// Renders the view mode toggle buttons (Static Chart vs Animation View).
+fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
+    if ui.selectable_label(state.view_mode == ViewMode::Static, "📊 Static").clicked() {
+        state.set_view_mode(ViewMode::Static);
+    }
+    if ui.selectable_label(state.view_mode == ViewMode::Animation, "🎬 Animation").clicked() {
+        state.set_view_mode(ViewMode::Animation);
+    }
+    ui.separator();
+}
 
 /// Renders the settings toggle button.
 fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
@@ -116,11 +127,14 @@ pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
+        render_mode_selector(ui, state);
         render_settings_button(ui, state);
         render_k_selector(ui, state);
         render_prime_range_section(ui, state, is_dark);
         render_rank_range_section(ui, state, is_dark);
-        action = render_compute_action(ui, state);
+        if state.view_mode == ViewMode::Static {
+            action = render_compute_action(ui, state);
+        }
     });
     ui.add_space(2.0);
     ui.separator();

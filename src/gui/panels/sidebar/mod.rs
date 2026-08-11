@@ -6,7 +6,7 @@ pub mod anim_toolbar;
 pub mod dual_slider;
 pub mod main_toolbar;
 
-use crate::gui::state::AppState;
+use crate::gui::state::{AppState, ViewMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarAction {
@@ -21,10 +21,14 @@ pub enum SidebarAction {
 
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let main_action = main_toolbar::render_main_toolbar(ui, state);
-    let anim_action = anim_toolbar::render_anim_toolbar(ui, state);
 
-    match main_action {
-        SidebarAction::None => anim_action,
-        action => action,
+    if state.view_mode == ViewMode::Animation {
+        let anim_action = anim_toolbar::render_anim_toolbar(ui, state);
+        match main_action {
+            SidebarAction::None => anim_action,
+            action => action,
+        }
+    } else {
+        main_action
     }
 }

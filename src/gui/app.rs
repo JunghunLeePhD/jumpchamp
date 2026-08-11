@@ -104,6 +104,7 @@ impl JumpChampApp {
 
     fn dispatch_start_animation(&mut self) {
         self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
+        self.state.recalculate_anim_300_frames();
         if self.state.anim_current_val >= self.state.max_val {
             self.state.anim_current_val = self.state.min_val;
         }
@@ -126,6 +127,7 @@ impl JumpChampApp {
 
     fn dispatch_start_reverse_animation(&mut self) {
         self.state.anim_direction = crate::gui::state::PlayDirection::Reverse;
+        self.state.recalculate_anim_300_frames();
         if self.state.anim_current_val <= self.state.min_val {
             self.state.anim_current_val = self.state.max_val;
         }
