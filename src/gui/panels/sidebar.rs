@@ -230,9 +230,10 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                 [85.0_f32, 18.0_f32],
                 egui::DragValue::new(&mut state.min_val)
                     .speed(min_speed)
-                    .range(1..=max_limit),
+                    .range(1..=max_limit)
+                    .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Min Prime Value N_min: {}", format_compact_num(state.min_val)))
+            .on_hover_text(format!("Min Prime Value N_min: {}", format_thousands(state.min_val)))
             .changed()
         {
             state.min_val = state.min_val.clamp(1, max_limit);
@@ -254,9 +255,10 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                 [85.0_f32, 18.0_f32],
                 egui::DragValue::new(&mut state.max_val)
                     .speed(max_speed)
-                    .range(1..=max_limit),
+                    .range(1..=max_limit)
+                    .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Max Prime Value N_max: {}", format_compact_num(state.max_val)))
+            .on_hover_text(format!("Max Prime Value N_max: {}", format_thousands(state.max_val)))
             .changed()
         {
             state.max_val = state.max_val.clamp(1, max_limit);
@@ -349,19 +351,21 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         ui.separator();
 
-        // Scrubber Slider
+        // Bound DragValue Input (Matching N_max widget size [85.0, 18.0])
         ui.label("Bound:");
-        let mut scrub_val = state.anim_current_val.clamp(state.min_val, state.max_val);
+        let bound_speed = (state.max_val as f64 / 100.0).max(10.0);
         if ui
-            .add(
-                egui::Slider::new(&mut scrub_val, state.min_val..=state.max_val)
-                    .custom_formatter(|v, _| format_compact_num(v as u64))
-                    .show_value(true),
+            .add_sized(
+                [85.0_f32, 18.0_f32],
+                egui::DragValue::new(&mut state.anim_current_val)
+                    .speed(bound_speed)
+                    .range(state.min_val..=state.max_val)
+                    .custom_formatter(|v, _| format_compact_num(v as u64)),
             )
-            .on_hover_text(format!("Animation Prime Bound: {}", format_thousands(scrub_val)))
+            .on_hover_text(format!("Animation Prime Bound: {}", format_thousands(state.anim_current_val)))
             .changed()
         {
-            state.anim_current_val = scrub_val;
+            state.anim_current_val = state.anim_current_val.clamp(state.min_val, state.max_val);
             if !state.is_animating {
                 action = SidebarAction::StepAnimation;
             }
@@ -369,11 +373,12 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         ui.separator();
 
-        // Step size control (Dynamically scaled with prime range)
+        // Step size DragValue Input (Matching N_max widget size [85.0, 18.0])
         ui.label("Step:");
         let prime_range = state.max_val.saturating_sub(state.min_val).max(50);
         let dynamic_step_speed = (prime_range as f64 / 500.0).max(1.0);
-        ui.add(
+        ui.add_sized(
+            [85.0_f32, 18.0_f32],
             egui::DragValue::new(&mut state.anim_step_size)
                 .speed(dynamic_step_speed)
                 .range(1..=prime_range)
