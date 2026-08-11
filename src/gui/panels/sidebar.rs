@@ -322,9 +322,14 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
                 state.is_precaching = false;
             }
         } else {
+            let play_label = if state.anim_current_val > state.min_val && state.anim_current_val < state.max_val {
+                "▶ Resume Animation"
+            } else {
+                "▶ Play Animation"
+            };
             if ui
-                .button("▶ Play Animation")
-                .on_hover_text("Pre-compute dataset and Play Cumulative Growth Animation across prime range")
+                .button(play_label)
+                .on_hover_text("Pre-compute dataset and Play/Resume Cumulative Growth Animation")
                 .clicked()
             {
                 action = SidebarAction::StartAnimation;

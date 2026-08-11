@@ -70,21 +70,29 @@ impl JumpChampApp {
     }
 
     fn dispatch_start_animation(&mut self) {
-        self.state.is_loading = true;
-        self.state.is_precaching = true;
-        self.state.is_animating = false;
-        self.state.progress = 0.0;
-        self.state.error_msg = None;
+        if self.state.anim_current_val > self.state.min_val && self.state.anim_current_val < self.state.max_val {
+            self.state.is_animating = true;
+            self.state.is_precaching = false;
+            self.state.last_frame_instant = None;
+            self.dispatch_anim_frame();
+        } else {
+            self.state.anim_current_val = self.state.min_val;
+            self.state.is_loading = true;
+            self.state.is_precaching = true;
+            self.state.is_animating = false;
+            self.state.progress = 0.0;
+            self.state.error_msg = None;
 
-        let cmd = WorkerCommand::ComputeGaps {
-            min_val: self.state.min_val,
-            max_val: self.state.max_val,
-            k: self.state.k,
-            top_min: self.state.top_min,
-            top_max: self.state.top_max,
-            sort_by: self.state.sort_by.clone(),
-        };
-        self.state.cmd_tx.send(cmd).ok();
+            let cmd = WorkerCommand::ComputeGaps {
+                min_val: self.state.min_val,
+                max_val: self.state.max_val,
+                k: self.state.k,
+                top_min: self.state.top_min,
+                top_max: self.state.top_max,
+                sort_by: self.state.sort_by.clone(),
+            };
+            self.state.cmd_tx.send(cmd).ok();
+        }
     }
 
     fn dispatch_cancel(&mut self) {
