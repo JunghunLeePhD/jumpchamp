@@ -104,29 +104,24 @@ impl JumpChampApp {
 
     fn dispatch_start_animation(&mut self) {
         self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
-        if self.state.anim_current_val > self.state.min_val && self.state.anim_current_val < self.state.max_val {
-            self.state.is_animating = true;
-            self.state.is_precaching = false;
-            self.state.last_frame_instant = None;
-            self.dispatch_anim_frame();
-        } else {
+        if self.state.anim_current_val >= self.state.max_val {
             self.state.anim_current_val = self.state.min_val;
-            self.state.is_loading = true;
-            self.state.is_precaching = true;
-            self.state.is_animating = false;
-            self.state.progress = 0.0;
-            self.state.error_msg = None;
-
-            let cmd = WorkerCommand::ComputeGaps {
-                min_val: self.state.min_val,
-                max_val: self.state.max_val,
-                k: self.state.k,
-                top_min: 1,
-                top_max: usize::MAX,
-                sort_by: self.state.sort_by.clone(),
-            };
-            self.state.cmd_tx.send(cmd).ok();
         }
+        self.state.is_loading = true;
+        self.state.is_precaching = true;
+        self.state.is_animating = false;
+        self.state.progress = 0.0;
+        self.state.error_msg = None;
+
+        let cmd = WorkerCommand::ComputeGaps {
+            min_val: self.state.min_val,
+            max_val: self.state.max_val,
+            k: self.state.k,
+            top_min: 1,
+            top_max: usize::MAX,
+            sort_by: self.state.sort_by.clone(),
+        };
+        self.state.cmd_tx.send(cmd).ok();
     }
 
     fn dispatch_start_reverse_animation(&mut self) {
@@ -134,10 +129,21 @@ impl JumpChampApp {
         if self.state.anim_current_val <= self.state.min_val {
             self.state.anim_current_val = self.state.max_val;
         }
-        self.state.is_animating = true;
-        self.state.is_precaching = false;
-        self.state.last_frame_instant = None;
-        self.dispatch_anim_frame();
+        self.state.is_loading = true;
+        self.state.is_precaching = true;
+        self.state.is_animating = false;
+        self.state.progress = 0.0;
+        self.state.error_msg = None;
+
+        let cmd = WorkerCommand::ComputeGaps {
+            min_val: self.state.min_val,
+            max_val: self.state.max_val,
+            k: self.state.k,
+            top_min: 1,
+            top_max: usize::MAX,
+            sort_by: self.state.sort_by.clone(),
+        };
+        self.state.cmd_tx.send(cmd).ok();
     }
 
     fn dispatch_cancel(&mut self) {
@@ -158,9 +164,15 @@ impl App for JumpChampApp {
                 WorkerResult::FrequencyData(f) => self.state.update_freq_data(f),
                 WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
 
-                WorkerResult::Progress(p) => {
-                    self.state.progress = p;
-                    if p >= 1.0 {
+                WorkerResult::Progress {
+                    progress,
+                    current_block,
+                    total_blocks,
+                } => {
+                    self.state.progress = progress;
+                    self.state.current_block = current_block;
+                    self.state.total_blocks = total_blocks;
+                    if progress >= 1.0 {
                         self.state.is_loading = false;
                         if !self.state.freq_data.is_empty() {
                             self.state.top_min = 1;
@@ -213,8 +225,15 @@ impl App for JumpChampApp {
                 ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
                 ui.separator();
                 if self.state.is_precaching {
+                    let pct = (self.state.progress * 100.0) as u32;
+                    let block_info = if self.state.total_blocks > 0 {
+                        format!(" [Block {}/{}]", self.state.current_block, self.state.total_blocks)
+                    } else {
+                        String::new()
+                    };
                     ui.label(format!(
-                        "⚡ PRE-CACHING: n = {} ~ {} for 0-delay playback...",
+                        "⚡ PRE-CACHING ({pct}%{}): n = {} ~ {} for 0-delay playback...",
+                        block_info,
                         format_compact_num(self.state.min_val),
                         format_compact_num(self.state.max_val)
                     ));
@@ -247,6 +266,20 @@ impl App for JumpChampApp {
                     .map(|ms| format!("{:.1} ms", ms))
                     .unwrap_or_else(|| "-- ms".to_string());
                 ui.label(format!("⚡ Latency: {}", latency_str));
+
+                ui.separator();
+                if self.state.is_animating {
+                    let anim_prog = self.state.animation_progress();
+                    ui.add_sized(
+                        [90.0_f32, 16.0_f32],
+                        egui::ProgressBar::new(anim_prog).show_percentage(),
+                    );
+                } else if self.state.is_loading || self.state.is_precaching {
+                    ui.add_sized(
+                        [90.0_f32, 16.0_f32],
+                        egui::ProgressBar::new(self.state.progress).show_percentage(),
+                    );
+                }
             });
         });
 

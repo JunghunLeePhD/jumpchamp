@@ -13,8 +13,7 @@ const LARGE_BLOCK_SIZE: usize = 5_000_000;
 const SMALL_BLOCK_SIZE: usize = 1_000_000;
 const EXACT_THRESHOLD: u64 = 100_000;
 const PROGRESS_INTERVAL_MS: u128 = 33;
-const MIN_CHUNK_SIZE: u64 = 10_000;
-const MAX_CHUNK_SIZE: u64 = 1_000_000;
+const CHUNK_SIZE: u64 = 10_000;
 
 fn nth_prime_upper_bound(n: u64) -> u64 {
     if n <= 5 {
@@ -125,7 +124,13 @@ fn sieve_and_cache(
         if last_progress_time.elapsed().as_millis() >= PROGRESS_INTERVAL_MS || current_block == total_blocks {
             last_progress_time = std::time::Instant::now();
             let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
-            res_tx.send(WorkerResult::Progress(prog)).ok();
+            res_tx
+                .send(WorkerResult::Progress {
+                    progress: prog,
+                    current_block,
+                    total_blocks,
+                })
+                .ok();
             ctx.request_repaint();
         }
 
@@ -193,7 +198,7 @@ fn run_compute_with_cache(
         }))
         .ok();
 
-    let chunk_size = (max_val / 100).clamp(MIN_CHUNK_SIZE, MAX_CHUNK_SIZE);
+    let chunk_size = CHUNK_SIZE;
     let start_chunk = min_val / chunk_size;
     let end_chunk = max_val / chunk_size;
 
@@ -261,7 +266,13 @@ fn run_compute_with_cache(
 
     res_tx.send(WorkerResult::FrequencyData(freq_vec)).ok();
     res_tx.send(WorkerResult::QueryLatency(elapsed_ms)).ok();
-    res_tx.send(WorkerResult::Progress(1.0)).ok();
+    res_tx
+        .send(WorkerResult::Progress {
+            progress: 1.0,
+            current_block: 1,
+            total_blocks: 1,
+        })
+        .ok();
     ctx.request_repaint();
 
     Ok(())

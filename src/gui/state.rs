@@ -41,7 +41,11 @@ pub enum WorkerResult {
     Metadata(DatasetMetadata),
     FrequencyData(Vec<(u64, u64)>),
     QueryLatency(f64),
-    Progress(f32),
+    Progress {
+        progress: f32,
+        current_block: usize,
+        total_blocks: usize,
+    },
     Error(String),
 }
 
@@ -86,6 +90,8 @@ pub struct AppState {
     // Worker Status
     pub is_loading: bool,
     pub progress: f32,
+    pub current_block: usize,
+    pub total_blocks: usize,
     pub error_msg: Option<String>,
 
     // Channels
@@ -129,11 +135,19 @@ impl AppState {
 
             is_loading: false,
             progress: 0.0,
+            current_block: 0,
+            total_blocks: 0,
             error_msg: None,
 
             cmd_tx,
             res_rx,
         }
+    }
+
+    pub fn animation_progress(&self) -> f32 {
+        let range = self.max_val.saturating_sub(self.min_val).max(1) as f32;
+        let cur = self.anim_current_val.saturating_sub(self.min_val) as f32;
+        (cur / range).clamp(0.0, 1.0)
     }
 
     pub fn update_freq_data(&mut self, new_freq: Vec<(u64, u64)>) {

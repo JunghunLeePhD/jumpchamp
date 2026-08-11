@@ -231,11 +231,14 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
 
         ui.separator();
         // Group 5: Action Button / Progress Bar
-        if state.is_loading {
+        if state.is_loading && !state.is_animating {
             ui.add_sized(
                 [80.0_f32, 18.0_f32],
                 egui::ProgressBar::new(state.progress).show_percentage(),
             );
+            if state.total_blocks > 0 {
+                ui.label(format!("{}/{}", state.current_block, state.total_blocks));
+            }
             if ui.button("✖ Cancel").clicked() {
                 action = SidebarAction::Cancel;
             }
@@ -250,6 +253,23 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     // Group 6: Animation Toolbar Row (Cumulative Growth Animation)
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("🎬 Animation:").strong());
+
+        if state.is_precaching {
+            ui.label("⚡ Pre-caching:");
+            ui.add_sized(
+                [80.0_f32, 18.0_f32],
+                egui::ProgressBar::new(state.progress).show_percentage(),
+            );
+            if state.total_blocks > 0 {
+                ui.label(format!("[Block {}/{}]", state.current_block, state.total_blocks));
+            }
+        } else if state.is_animating {
+            let anim_prog = state.animation_progress();
+            ui.add_sized(
+                [80.0_f32, 18.0_f32],
+                egui::ProgressBar::new(anim_prog).show_percentage(),
+            );
+        }
 
         if state.is_animating || state.is_precaching {
             if ui
