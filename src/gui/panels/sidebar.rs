@@ -9,6 +9,7 @@ pub enum SidebarAction {
     None,
     Compute,
     Cancel,
+    StepAnimation,
 }
 
 pub fn format_compact_num(val: u64) -> String {
@@ -237,11 +238,14 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             if state.min_val > state.max_val {
                 state.max_val = state.min_val;
             }
+            state.recalculate_dynamic_step();
         }
 
         let is_dark = theme::is_dark(state.theme_mode);
 
-        render_dual_range_slider(ui, &mut state.min_val, &mut state.max_val, max_limit, is_dark);
+        if render_dual_range_slider(ui, &mut state.min_val, &mut state.max_val, max_limit, is_dark).changed() {
+            state.recalculate_dynamic_step();
+        }
 
         let max_speed = (state.max_val as f64 / 100.0).max(10.0);
         if ui
@@ -258,6 +262,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
             if state.max_val < state.min_val {
                 state.min_val = state.max_val;
             }
+            state.recalculate_dynamic_step();
         }
 
         ui.separator();
@@ -298,6 +303,88 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         } else if ui.button("▶ Compute").clicked() {
             action = SidebarAction::Compute;
         }
+    });
+
+    ui.add_space(2.0);
+    ui.separator();
+
+    // Group 6: Animation Toolbar Row (Cumulative Growth Animation)
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("🎬 Animation:").strong());
+
+        if state.is_animating {
+            if ui.button("⏸ Pause").on_hover_text("Pause Growth Chart Animation").clicked() {
+                state.is_animating = false;
+            }
+        } else {
+            if ui
+                .button("▶ Play Animation")
+                .on_hover_text("Play Cumulative Growth Animation across prime range")
+                .clicked()
+            {
+                state.is_animating = true;
+                if state.anim_current_val < state.min_val || state.anim_current_val >= state.max_val {
+                    state.anim_current_val = state.min_val;
+                }
+                state.last_frame_instant = None;
+            }
+        }
+
+        if ui.button("⏭ Step").on_hover_text("Advance 1 animation step").clicked() {
+            state.is_animating = false;
+            action = SidebarAction::StepAnimation;
+        }
+
+        if ui.button("↺ Reset").on_hover_text("Reset animation bound to Min Prime value").clicked() {
+            state.is_animating = false;
+            state.anim_current_val = state.min_val;
+            action = SidebarAction::Compute;
+        }
+
+        ui.separator();
+
+        // Scrubber Slider
+        ui.label("Bound:");
+        let mut scrub_val = state.anim_current_val.clamp(state.min_val, state.max_val);
+        if ui
+            .add(
+                egui::Slider::new(&mut scrub_val, state.min_val..=state.max_val)
+                    .custom_formatter(|v, _| format_compact_num(v as u64))
+                    .show_value(true),
+            )
+            .on_hover_text(format!("Animation Prime Bound: {}", format_thousands(scrub_val)))
+            .changed()
+        {
+            state.anim_current_val = scrub_val;
+            if !state.is_animating {
+                action = SidebarAction::StepAnimation;
+            }
+        }
+
+        ui.separator();
+
+        // Step size control (Dynamically scaled with prime range)
+        ui.label("Step:");
+        let prime_range = state.max_val.saturating_sub(state.min_val).max(50);
+        let dynamic_step_speed = (prime_range as f64 / 500.0).max(1.0);
+        ui.add(
+            egui::DragValue::new(&mut state.anim_step_size)
+                .speed(dynamic_step_speed)
+                .range(1..=prime_range)
+                .custom_formatter(|v, _| format_compact_num(v as u64)),
+        )
+        .on_hover_text("Prime index additive step increment per frame (dynamically scaled)");
+
+        ui.separator();
+
+        // Speed FPS Slider
+        ui.label("Speed:");
+        ui.add(
+            egui::Slider::new(&mut state.anim_speed_fps, 1.0..=30.0)
+                .suffix(" FPS")
+                .show_value(true),
+        )
+        .on_hover_text("Animation frame rate in frames per second");
     });
     ui.add_space(2.0);
 

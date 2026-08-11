@@ -215,7 +215,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
         let meter_height = ((available_h - 90.0) * 0.5).clamp(100.0, 400.0);
 
         egui::Area::new(egui::Id::new("heatmap_count_meter"))
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 48.0))
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 92.0))
             .interactable(true)
             .show(&ctx, |ui| {
                 egui::Frame::none()

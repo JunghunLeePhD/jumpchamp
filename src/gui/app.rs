@@ -1,7 +1,3 @@
-// ============================================================================
-// Main eframe App Implementation
-// ============================================================================
-
 use crossbeam_channel::unbounded;
 use eframe::App;
 
@@ -44,9 +40,39 @@ impl JumpChampApp {
         self.state.cmd_tx.send(cmd).ok();
     }
 
+    fn dispatch_anim_frame(&mut self) {
+        self.state.is_loading = true;
+        self.state.progress = 0.0;
+        self.state.error_msg = None;
+
+        let min_range = self.state.min_val;
+        let max_range = self.state.anim_current_val.max(self.state.min_val);
+
+        let cmd = WorkerCommand::ComputeGaps {
+            min_val: min_range,
+            max_val: max_range,
+            k: self.state.k,
+            top_min: self.state.top_min,
+            top_max: self.state.top_max,
+            sort_by: self.state.sort_by.clone(),
+        };
+        self.state.cmd_tx.send(cmd).ok();
+    }
+
+    fn dispatch_step_animation(&mut self) {
+        if self.state.anim_current_val >= self.state.max_val {
+            self.state.anim_current_val = self.state.min_val;
+        } else {
+            self.state.anim_current_val =
+                (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
+        }
+        self.dispatch_anim_frame();
+    }
+
     fn dispatch_cancel(&mut self) {
         self.state.cmd_tx.send(WorkerCommand::Cancel).ok();
         self.state.is_loading = false;
+        self.state.is_animating = false;
     }
 }
 
@@ -69,22 +95,56 @@ impl App for JumpChampApp {
                 WorkerResult::Error(e) => {
                     self.state.error_msg = Some(e);
                     self.state.is_loading = false;
+                    self.state.is_animating = false;
                 }
             }
+        }
+
+        // Animation Timer Tick
+        if self.state.is_animating && !self.state.is_loading {
+            let now = std::time::Instant::now();
+            let fps = self.state.anim_speed_fps.max(1.0);
+            let target_delay = std::time::Duration::from_secs_f32(1.0 / fps);
+
+            let should_step = match self.state.last_frame_instant {
+                Some(last) => now.duration_since(last) >= target_delay,
+                None => true,
+            };
+
+            if should_step {
+                self.state.last_frame_instant = Some(now);
+                if self.state.anim_current_val >= self.state.max_val {
+                    self.state.is_animating = false;
+                } else {
+                    self.state.anim_current_val =
+                        (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
+                    self.dispatch_anim_frame();
+                }
+            }
+            ctx.request_repaint_after(target_delay);
         }
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
                 ui.separator();
-                ui.label(format!(
-                    "📊 Range: {} ~ {} (k={}, Rank={}~{})",
-                    sidebar::format_compact_num(self.state.min_val),
-                    sidebar::format_compact_num(self.state.max_val),
-                    self.state.k,
-                    self.state.top_min,
-                    self.state.top_max
-                ));
+                if self.state.is_animating {
+                    ui.label(format!(
+                        "🎬 ANIMATING: {} ~ {} (Bound: {})",
+                        sidebar::format_compact_num(self.state.min_val),
+                        sidebar::format_compact_num(self.state.max_val),
+                        sidebar::format_compact_num(self.state.anim_current_val)
+                    ));
+                } else {
+                    ui.label(format!(
+                        "📊 Range: {} ~ {} (k={}, Rank={}~{})",
+                        sidebar::format_compact_num(self.state.min_val),
+                        sidebar::format_compact_num(self.state.max_val),
+                        self.state.k,
+                        self.state.top_min,
+                        self.state.top_max
+                    ));
+                }
                 ui.separator();
                 let latency_str = self
                     .state
@@ -100,9 +160,9 @@ impl App for JumpChampApp {
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
                 SidebarAction::Compute => self.dispatch_compute(),
                 SidebarAction::Cancel => self.dispatch_cancel(),
+                SidebarAction::StepAnimation => self.dispatch_step_animation(),
                 SidebarAction::None => {}
             });
-
 
         egui::CentralPanel::default().show(ctx, |ui| {
             chart::render(ui, &self.state);

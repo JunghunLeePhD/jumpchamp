@@ -63,6 +63,13 @@ pub struct AppState {
     pub show_pct_labels: bool,
     pub show_heatmap_meter: bool,
 
+    // Animation Controls (Cumulative Linear Growth)
+    pub is_animating: bool,
+    pub anim_current_val: u64,
+    pub anim_step_size: u64,
+    pub anim_speed_fps: f32,
+    pub last_frame_instant: Option<std::time::Instant>,
+
     // Data
     pub metadata: Option<DatasetMetadata>,
     pub freq_data: Vec<(u64, u64)>,
@@ -80,10 +87,14 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
+        let min_v = 1u64;
+        let max_v = 10_000_000_000u64;
+        let default_step = (max_v.saturating_sub(min_v) / 50).max(1);
+
         Self {
             k: 2,
-            min_val: 1,
-            max_val: 10_000_000_000, // Default 10B (10 Billion)
+            min_val: min_v,
+            max_val: max_v, // Default 10B (10 Billion)
             top_min: 1,
             top_max: 20,
             sort_by: SortOrder::ByFrequency,
@@ -96,6 +107,12 @@ impl AppState {
             show_pct_labels: true,
             show_heatmap_meter: true,
 
+            is_animating: false,
+            anim_current_val: default_step,
+            anim_step_size: default_step,
+            anim_speed_fps: 5.0,
+            last_frame_instant: None,
+
             metadata: None,
             freq_data: Vec::new(),
             query_latency_ms: None,
@@ -107,6 +124,11 @@ impl AppState {
             cmd_tx,
             res_rx,
         }
+    }
+
+    pub fn recalculate_dynamic_step(&mut self) {
+        let range = self.max_val.saturating_sub(self.min_val);
+        self.anim_step_size = (range / 50).max(1);
     }
 }
 
