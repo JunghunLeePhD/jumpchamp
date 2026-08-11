@@ -17,12 +17,21 @@ pub enum SortOrder {
 }
 
 #[derive(Debug, Clone)]
-
 pub struct DatasetMetadata {
     pub total_rows: u64,
     pub unique_gaps: u64,
     pub min_gap: u16,
     pub max_gap: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrecomputedAnimData {
+    pub min_val: u64,
+    pub max_val: u64,
+    pub k: usize,
+    pub total_frames: usize,
+    pub step_size: u64,
+    pub prefix_sums: Vec<Vec<u64>>,
 }
 
 pub enum WorkerCommand {
@@ -34,12 +43,19 @@ pub enum WorkerCommand {
         top_max: usize,
         sort_by: SortOrder,
     },
+    PrecacheAnimation {
+        min_val: u64,
+        max_val: u64,
+        k: usize,
+        total_frames: usize,
+    },
     Cancel,
 }
 
 pub enum WorkerResult {
     Metadata(DatasetMetadata),
     FrequencyData(Vec<(u64, u64)>),
+    PrecomputedAnimation(PrecomputedAnimData),
     QueryLatency(f64),
     Progress {
         progress: f32,
@@ -90,6 +106,7 @@ pub struct AppState {
     pub anim_step_size: u64,
     pub anim_speed_fps: f32,
     pub last_frame_instant: Option<std::time::Instant>,
+    pub anim_precomputed: Option<PrecomputedAnimData>,
 
     // Data
     pub metadata: Option<DatasetMetadata>,
@@ -139,6 +156,7 @@ impl AppState {
             anim_step_size: default_step,
             anim_speed_fps: 5.0,
             last_frame_instant: None,
+            anim_precomputed: None,
 
             metadata: None,
             freq_data: Vec::new(),
@@ -165,6 +183,45 @@ impl AppState {
         self.freq_data = new_freq;
         self.top_min = 1;
         self.top_max = self.freq_data.len().max(1);
+    }
+
+    pub fn update_freq_from_precomputed(&mut self) -> bool {
+        if let Some(ref data) = self.anim_precomputed {
+            if data.min_val == self.min_val && data.max_val == self.max_val && data.k == self.k {
+                let frame_idx = if data.step_size > 0 {
+                    ((self.anim_current_val.saturating_sub(data.min_val)) / data.step_size) as usize
+                } else {
+                    0
+                };
+                let frame_idx = frame_idx.min(data.total_frames.saturating_sub(1));
+
+                let hist = &data.prefix_sums[frame_idx];
+                let mut freq_vec: Vec<(u64, u64)> = hist
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(gap, &count)| if count > 0 { Some((gap as u64, count)) } else { None })
+                    .collect();
+
+                let limit_top_n = self.top_max.max(1000);
+                match self.sort_by {
+                    SortOrder::ByFrequency => {
+                        freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+                        freq_vec.truncate(limit_top_n);
+                    }
+                    SortOrder::ByGapSize => {
+                        freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+                        freq_vec.truncate(limit_top_n);
+                        freq_vec.sort_by_key(|&(g, _)| g);
+                    }
+                }
+
+                self.freq_data = freq_vec;
+                self.top_min = 1;
+                self.top_max = self.freq_data.len().max(1);
+                return true;
+            }
+        }
+        false
     }
 
     pub fn recalculate_dynamic_step(&mut self) {

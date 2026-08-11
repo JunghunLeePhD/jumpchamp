@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender};
 
-use crate::gui::state::{DatasetMetadata, SortOrder, WorkerCommand, WorkerResult};
+use crate::gui::state::{DatasetMetadata, PrecomputedAnimData, SortOrder, WorkerCommand, WorkerResult};
 use crate::sieve::{small_primes, stream_prime_blocks_range};
 
 const HIST_SIZE: usize = 65_536;
@@ -69,6 +69,26 @@ pub fn spawn_worker(
                         top_max,
                         sort_by,
                         &mut cache,
+                        &res_tx,
+                        &ctx,
+                        &cancel_flag,
+                    ) {
+                        res_tx.send(WorkerResult::Error(err.to_string())).ok();
+                        ctx.request_repaint();
+                    }
+                }
+                Ok(WorkerCommand::PrecacheAnimation {
+                    min_val,
+                    max_val,
+                    k,
+                    total_frames,
+                }) => {
+                    cancel_flag.store(false, Ordering::SeqCst);
+                    if let Err(err) = run_precache_animation(
+                        min_val,
+                        max_val,
+                        k,
+                        total_frames,
                         &res_tx,
                         &ctx,
                         &cancel_flag,
@@ -280,3 +300,149 @@ fn run_compute_with_cache(
 
     Ok(())
 }
+
+fn run_precache_animation(
+    min_val: u64,
+    max_val: u64,
+    k: usize,
+    total_frames: usize,
+    res_tx: &Sender<WorkerResult>,
+    ctx: &egui::Context,
+    cancel_flag: &AtomicBool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let start_time = std::time::Instant::now();
+    let total_frames = total_frames.max(1);
+    let range = max_val.saturating_sub(min_val);
+    let step_size = (range / total_frames as u64).max(1);
+
+    let sieve_high = nth_prime_upper_bound(max_val) as usize;
+    let sqrt_limit = (sieve_high as f64).sqrt() as usize;
+    let base_primes = small_primes(sqrt_limit.max(2));
+
+    let block_size = if max_val >= LARGE_RANGE_THRESHOLD {
+        LARGE_BLOCK_SIZE
+    } else {
+        SMALL_BLOCK_SIZE
+    };
+    let total_blocks = ((sieve_high - 2) / block_size).max(1);
+    let mut current_block = 0usize;
+
+    let mut ring_buf = [(0u64, 0u64); RING_BUF_CAPACITY];
+    let mut head = 0usize;
+    let mut count_in_buf = 0usize;
+    let mut prime_idx = 0u64;
+
+    let mut frame_chunks = vec![vec![0u64; HIST_SIZE]; total_frames];
+    let mut last_progress_time = std::time::Instant::now();
+
+    for block in stream_prime_blocks_range(2, sieve_high, block_size, &base_primes) {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        current_block += 1;
+        if last_progress_time.elapsed().as_millis() >= PROGRESS_INTERVAL_MS || current_block == total_blocks {
+            last_progress_time = std::time::Instant::now();
+            let prog = (current_block as f32 / total_blocks as f32).clamp(0.0, 0.99);
+            res_tx
+                .send(WorkerResult::Progress {
+                    progress: prog,
+                    current_block,
+                    total_blocks,
+                })
+                .ok();
+            ctx.request_repaint();
+        }
+
+        for p in block {
+            prime_idx += 1;
+            if prime_idx > max_val + (k as u64) {
+                break;
+            }
+
+            ring_buf[head] = (prime_idx, p);
+            head = (head + 1) % RING_BUF_CAPACITY;
+            if count_in_buf < k + 1 {
+                count_in_buf += 1;
+            }
+
+            if count_in_buf == k + 1 {
+                let tail = (head + RING_BUF_CAPACITY - (k + 1)) % RING_BUF_CAPACITY;
+                let (idx_start, p_start) = ring_buf[tail];
+
+                if idx_start >= min_val && prime_idx <= max_val {
+                    let chunk_idx = ((idx_start - min_val) / step_size) as usize;
+                    let target_frame = chunk_idx.min(total_frames - 1);
+                    let deltak = (p - p_start) as usize;
+                    if deltak < HIST_SIZE {
+                        frame_chunks[target_frame][deltak] += 1;
+                    }
+                }
+            }
+        }
+        if prime_idx > max_val + (k as u64) {
+            break;
+        }
+    }
+
+    if cancel_flag.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    // Build Prefix Sums
+    let mut prefix_sums = vec![vec![0u64; HIST_SIZE]; total_frames];
+    let mut running = vec![0u64; HIST_SIZE];
+    for (f, chunk) in frame_chunks.iter().enumerate() {
+        for g in 0..HIST_SIZE {
+            running[g] += chunk[g];
+        }
+        prefix_sums[f] = running.clone();
+    }
+
+    let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+
+    let final_counts = &prefix_sums[total_frames - 1];
+    let mut freq_vec: Vec<(u64, u64)> = final_counts
+        .iter()
+        .enumerate()
+        .filter_map(|(gap, &count)| if count > 0 { Some((gap as u64, count)) } else { None })
+        .collect();
+    freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let unique_gaps_count = freq_vec.len() as u64;
+    let min_gap_val = freq_vec.iter().map(|&(g, _)| g).min().unwrap_or(0) as u16;
+    let max_gap_val = freq_vec.iter().map(|&(g, _)| g).max().unwrap_or(0) as u16;
+
+    res_tx
+        .send(WorkerResult::PrecomputedAnimation(PrecomputedAnimData {
+            min_val,
+            max_val,
+            k,
+            total_frames,
+            step_size,
+            prefix_sums,
+        }))
+        .ok();
+
+    res_tx
+        .send(WorkerResult::Metadata(DatasetMetadata {
+            total_rows: max_val,
+            unique_gaps: unique_gaps_count,
+            min_gap: min_gap_val,
+            max_gap: max_gap_val,
+        }))
+        .ok();
+
+    res_tx.send(WorkerResult::QueryLatency(elapsed_ms)).ok();
+    res_tx
+        .send(WorkerResult::Progress {
+            progress: 1.0,
+            current_block: 1,
+            total_blocks: 1,
+        })
+        .ok();
+    ctx.request_repaint();
+
+    Ok(())
+}
+

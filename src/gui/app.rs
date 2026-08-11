@@ -42,19 +42,21 @@ impl JumpChampApp {
     }
 
     fn dispatch_anim_frame(&mut self) {
-        self.state.is_frame_in_flight = true;
-        let min_range = self.state.min_val;
-        let max_range = self.state.anim_current_val.max(self.state.min_val);
+        if !self.state.update_freq_from_precomputed() {
+            self.state.is_frame_in_flight = true;
+            let min_range = self.state.min_val;
+            let max_range = self.state.anim_current_val.max(self.state.min_val);
 
-        let cmd = WorkerCommand::ComputeGaps {
-            min_val: min_range,
-            max_val: max_range,
-            k: self.state.k,
-            top_min: self.state.top_min,
-            top_max: self.state.top_max,
-            sort_by: self.state.sort_by.clone(),
-        };
-        self.state.cmd_tx.send(cmd).ok();
+            let cmd = WorkerCommand::ComputeGaps {
+                min_val: min_range,
+                max_val: max_range,
+                k: self.state.k,
+                top_min: self.state.top_min,
+                top_max: self.state.top_max,
+                sort_by: self.state.sort_by.clone(),
+            };
+            self.state.cmd_tx.send(cmd).ok();
+        }
     }
 
     fn advance_anim_forward(&mut self) -> bool {
@@ -105,21 +107,31 @@ impl JumpChampApp {
         if self.state.anim_current_val >= self.state.max_val {
             self.state.anim_current_val = self.state.min_val;
         }
-        self.state.is_loading = true;
-        self.state.is_precaching = true;
-        self.state.is_animating = false;
-        self.state.progress = 0.0;
-        self.state.error_msg = None;
 
-        let cmd = WorkerCommand::ComputeGaps {
-            min_val: self.state.min_val,
-            max_val: self.state.max_val,
-            k: self.state.k,
-            top_min: 1,
-            top_max: usize::MAX,
-            sort_by: self.state.sort_by.clone(),
+        let needs_precache = match &self.state.anim_precomputed {
+            Some(data) => data.min_val != self.state.min_val || data.max_val != self.state.max_val || data.k != self.state.k,
+            None => true,
         };
-        self.state.cmd_tx.send(cmd).ok();
+
+        if needs_precache {
+            self.state.is_loading = true;
+            self.state.is_precaching = true;
+            self.state.is_animating = false;
+            self.state.progress = 0.0;
+            self.state.error_msg = None;
+
+            let cmd = WorkerCommand::PrecacheAnimation {
+                min_val: self.state.min_val,
+                max_val: self.state.max_val,
+                k: self.state.k,
+                total_frames: 300,
+            };
+            self.state.cmd_tx.send(cmd).ok();
+        } else {
+            self.state.is_animating = true;
+            self.state.last_frame_instant = None;
+            self.dispatch_anim_frame();
+        }
     }
 
     fn dispatch_start_reverse_animation(&mut self) {
@@ -128,21 +140,31 @@ impl JumpChampApp {
         if self.state.anim_current_val <= self.state.min_val {
             self.state.anim_current_val = self.state.max_val;
         }
-        self.state.is_loading = true;
-        self.state.is_precaching = true;
-        self.state.is_animating = false;
-        self.state.progress = 0.0;
-        self.state.error_msg = None;
 
-        let cmd = WorkerCommand::ComputeGaps {
-            min_val: self.state.min_val,
-            max_val: self.state.max_val,
-            k: self.state.k,
-            top_min: 1,
-            top_max: usize::MAX,
-            sort_by: self.state.sort_by.clone(),
+        let needs_precache = match &self.state.anim_precomputed {
+            Some(data) => data.min_val != self.state.min_val || data.max_val != self.state.max_val || data.k != self.state.k,
+            None => true,
         };
-        self.state.cmd_tx.send(cmd).ok();
+
+        if needs_precache {
+            self.state.is_loading = true;
+            self.state.is_precaching = true;
+            self.state.is_animating = false;
+            self.state.progress = 0.0;
+            self.state.error_msg = None;
+
+            let cmd = WorkerCommand::PrecacheAnimation {
+                min_val: self.state.min_val,
+                max_val: self.state.max_val,
+                k: self.state.k,
+                total_frames: 300,
+            };
+            self.state.cmd_tx.send(cmd).ok();
+        } else {
+            self.state.is_animating = true;
+            self.state.last_frame_instant = None;
+            self.dispatch_anim_frame();
+        }
     }
 
     fn dispatch_cancel(&mut self) {
@@ -165,6 +187,10 @@ impl App for JumpChampApp {
                     self.state.update_freq_data(f);
                     self.state.is_frame_in_flight = false;
                 }
+                WorkerResult::PrecomputedAnimation(anim_data) => {
+                    self.state.anim_precomputed = Some(anim_data);
+                    self.state.update_freq_from_precomputed();
+                }
                 WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
 
                 WorkerResult::Progress {
@@ -184,7 +210,11 @@ impl App for JumpChampApp {
                         if self.state.is_precaching {
                             self.state.is_precaching = false;
                             self.state.is_animating = true;
-                            self.state.anim_current_val = self.state.min_val;
+                            if self.state.anim_direction == crate::gui::state::PlayDirection::Forward {
+                                self.state.anim_current_val = self.state.min_val;
+                            } else {
+                                self.state.anim_current_val = self.state.max_val;
+                            }
                             self.state.last_frame_instant = None;
                             self.dispatch_anim_frame();
                         }
@@ -200,8 +230,8 @@ impl App for JumpChampApp {
             }
         }
 
-        // Animation Timer Tick (With In-Flight Lock Protection)
-        if self.state.is_animating && !self.state.is_loading && !self.state.is_frame_in_flight {
+        // Animation Timer Tick (Zero-latency precomputed playback)
+        if self.state.is_animating && !self.state.is_loading {
             let now = std::time::Instant::now();
             let fps = self.state.anim_speed_fps.max(1.0);
             let target_delay = std::time::Duration::from_secs_f32(1.0 / fps);
