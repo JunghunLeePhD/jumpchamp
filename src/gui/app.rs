@@ -69,10 +69,29 @@ impl JumpChampApp {
         self.dispatch_anim_frame();
     }
 
+    fn dispatch_start_animation(&mut self) {
+        self.state.is_loading = true;
+        self.state.is_precaching = true;
+        self.state.is_animating = false;
+        self.state.progress = 0.0;
+        self.state.error_msg = None;
+
+        let cmd = WorkerCommand::ComputeGaps {
+            min_val: self.state.min_val,
+            max_val: self.state.max_val,
+            k: self.state.k,
+            top_min: self.state.top_min,
+            top_max: self.state.top_max,
+            sort_by: self.state.sort_by.clone(),
+        };
+        self.state.cmd_tx.send(cmd).ok();
+    }
+
     fn dispatch_cancel(&mut self) {
         self.state.cmd_tx.send(WorkerCommand::Cancel).ok();
         self.state.is_loading = false;
         self.state.is_animating = false;
+        self.state.is_precaching = false;
     }
 }
 
@@ -90,12 +109,20 @@ impl App for JumpChampApp {
                     self.state.progress = p;
                     if p >= 1.0 {
                         self.state.is_loading = false;
+                        if self.state.is_precaching {
+                            self.state.is_precaching = false;
+                            self.state.is_animating = true;
+                            self.state.anim_current_val = self.state.min_val;
+                            self.state.last_frame_instant = None;
+                            self.dispatch_anim_frame();
+                        }
                     }
                 }
                 WorkerResult::Error(e) => {
                     self.state.error_msg = Some(e);
                     self.state.is_loading = false;
                     self.state.is_animating = false;
+                    self.state.is_precaching = false;
                 }
             }
         }
@@ -128,7 +155,13 @@ impl App for JumpChampApp {
             ui.horizontal(|ui| {
                 ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
                 ui.separator();
-                if self.state.is_animating {
+                if self.state.is_precaching {
+                    ui.label(format!(
+                        "⚡ PRE-CACHING: {} ~ {} for 0-delay playback...",
+                        sidebar::format_compact_num(self.state.min_val),
+                        sidebar::format_compact_num(self.state.max_val)
+                    ));
+                } else if self.state.is_animating {
                     ui.label(format!(
                         "🎬 ANIMATING: {} ~ {} (Bound: {})",
                         sidebar::format_compact_num(self.state.min_val),
@@ -160,6 +193,7 @@ impl App for JumpChampApp {
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
                 SidebarAction::Compute => self.dispatch_compute(),
                 SidebarAction::Cancel => self.dispatch_cancel(),
+                SidebarAction::StartAnimation => self.dispatch_start_animation(),
                 SidebarAction::StepAnimation => self.dispatch_step_animation(),
                 SidebarAction::None => {}
             });

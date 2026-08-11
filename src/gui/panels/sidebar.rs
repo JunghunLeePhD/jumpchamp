@@ -9,6 +9,7 @@ pub enum SidebarAction {
     None,
     Compute,
     Cancel,
+    StartAnimation,
     StepAnimation,
 }
 
@@ -312,21 +313,22 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("🎬 Animation:").strong());
 
-        if state.is_animating {
-            if ui.button("⏸ Pause").on_hover_text("Pause Growth Chart Animation").clicked() {
+        if state.is_animating || state.is_precaching {
+            if ui
+                .button("⏸ Pause")
+                .on_hover_text("Pause Growth Chart Animation")
+                .clicked()
+            {
                 state.is_animating = false;
+                state.is_precaching = false;
             }
         } else {
             if ui
                 .button("▶ Play Animation")
-                .on_hover_text("Play Cumulative Growth Animation across prime range")
+                .on_hover_text("Pre-compute dataset and Play Cumulative Growth Animation across prime range")
                 .clicked()
             {
-                state.is_animating = true;
-                if state.anim_current_val < state.min_val || state.anim_current_val >= state.max_val {
-                    state.anim_current_val = state.min_val;
-                }
-                state.last_frame_instant = None;
+                action = SidebarAction::StartAnimation;
             }
         }
 
