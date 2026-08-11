@@ -213,11 +213,14 @@ fn run_compute_with_cache(
     }
 
     if all_cached && start_chunk <= end_chunk {
-        // Fast Cache-Hit Accumulation Path: < 0.05 ms sub-millisecond execution!
+        // Fast Cache-Hit Accumulation Path: Optimized bounded slice iteration
         for c_idx in start_chunk..=end_chunk {
             if let Some(hist) = cache.chunks.get(&(c_idx, k)) {
-                for (g, &cnt) in hist.iter().enumerate() {
-                    counts[g] += cnt;
+                let max_len = hist.iter().rposition(|&cnt| cnt > 0).map(|i| i + 1).unwrap_or(0);
+                for (g, &cnt) in hist[..max_len].iter().enumerate() {
+                    if cnt > 0 {
+                        counts[g] += cnt;
+                    }
                 }
             }
         }

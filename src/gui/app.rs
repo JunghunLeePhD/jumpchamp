@@ -42,10 +42,7 @@ impl JumpChampApp {
     }
 
     fn dispatch_anim_frame(&mut self) {
-        self.state.is_loading = true;
-        self.state.progress = 0.0;
-        self.state.error_msg = None;
-
+        self.state.is_frame_in_flight = true;
         let min_range = self.state.min_val;
         let max_range = self.state.anim_current_val.max(self.state.min_val);
 
@@ -153,6 +150,7 @@ impl JumpChampApp {
         self.state.is_loading = false;
         self.state.is_animating = false;
         self.state.is_precaching = false;
+        self.state.is_frame_in_flight = false;
     }
 }
 
@@ -163,7 +161,10 @@ impl App for JumpChampApp {
         while let Ok(result) = self.state.res_rx.try_recv() {
             match result {
                 WorkerResult::Metadata(m) => self.state.metadata = Some(m),
-                WorkerResult::FrequencyData(f) => self.state.update_freq_data(f),
+                WorkerResult::FrequencyData(f) => {
+                    self.state.update_freq_data(f);
+                    self.state.is_frame_in_flight = false;
+                }
                 WorkerResult::QueryLatency(ms) => self.state.query_latency_ms = Some(ms),
 
                 WorkerResult::Progress {
@@ -194,12 +195,13 @@ impl App for JumpChampApp {
                     self.state.is_loading = false;
                     self.state.is_animating = false;
                     self.state.is_precaching = false;
+                    self.state.is_frame_in_flight = false;
                 }
             }
         }
 
-        // Animation Timer Tick
-        if self.state.is_animating && !self.state.is_loading {
+        // Animation Timer Tick (With In-Flight Lock Protection)
+        if self.state.is_animating && !self.state.is_loading && !self.state.is_frame_in_flight {
             let now = std::time::Instant::now();
             let fps = self.state.anim_speed_fps.max(1.0);
             let target_delay = std::time::Duration::from_secs_f32(1.0 / fps);

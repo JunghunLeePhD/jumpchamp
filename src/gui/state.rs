@@ -84,6 +84,7 @@ pub struct AppState {
     // Animation Controls (Cumulative Linear Growth)
     pub is_animating: bool,
     pub is_precaching: bool,
+    pub is_frame_in_flight: bool,
     pub anim_direction: PlayDirection,
     pub anim_current_val: u64,
     pub anim_step_size: u64,
@@ -132,6 +133,7 @@ impl AppState {
 
             is_animating: false,
             is_precaching: false,
+            is_frame_in_flight: false,
             anim_direction: PlayDirection::Forward,
             anim_current_val: min_v,
             anim_step_size: default_step,

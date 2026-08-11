@@ -10,10 +10,10 @@ use crate::gui::utils::format_compact_num;
 
 /// Renders the view mode toggle buttons (Static Chart vs Animation View).
 fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
-    if ui.selectable_label(state.view_mode == ViewMode::Static, "📊 Static").clicked() {
+    if ui.selectable_label(state.view_mode == ViewMode::Static, "📊").clicked() {
         state.set_view_mode(ViewMode::Static);
     }
-    if ui.selectable_label(state.view_mode == ViewMode::Animation, "🎬 Animation").clicked() {
+    if ui.selectable_label(state.view_mode == ViewMode::Animation, "🎬").clicked() {
         state.set_view_mode(ViewMode::Animation);
     }
     ui.separator();
@@ -21,7 +21,7 @@ fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
 
 /// Renders the settings toggle button.
 fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
-    if ui.button("⚙ Settings").clicked() {
+    if ui.button("⚙").clicked() {
         state.show_settings = !state.show_settings;
     }
     ui.separator();
@@ -111,10 +111,10 @@ fn render_compute_action(ui: &mut egui::Ui, state: &AppState) -> SidebarAction {
             [80.0_f32, 18.0_f32],
             egui::ProgressBar::new(state.progress).show_percentage(),
         );
-        if ui.button("✖ Cancel").clicked() {
+        if ui.button("✖").clicked() {
             return SidebarAction::Cancel;
         }
-    } else if ui.button("▶ Compute").clicked() {
+    } else if ui.button("▶").clicked() {
         return SidebarAction::Compute;
     }
     SidebarAction::None
@@ -127,8 +127,8 @@ pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
-        render_mode_selector(ui, state);
         render_settings_button(ui, state);
+        render_mode_selector(ui, state);
         render_k_selector(ui, state);
         render_prime_range_section(ui, state, is_dark);
         render_rank_range_section(ui, state, is_dark);
