@@ -279,6 +279,28 @@ These commands should be run **on the target platform itself**:
 | **macOS (Intel)** | macOS x86_64 + `rustup target add x86_64-apple-darwin` | `cargo build --release --target x86_64-apple-darwin --bin jumpchamp_gui` |
 | **Linux** | Linux x86_64 + Rust installed | `cargo build --release --bin jumpchamp_gui` |
 
+---
+
+### **🖼️ Setting Application & Desktop Icons**
+
+The app displays its icon in the runtime OS Dock/Taskbar, as well as on Desktop and File Managers:
+
+* **Windows (`.exe` File & Desktop Icon)**:
+  `build.rs` embeds `assets/icon.ico` directly into `jumpchamp_gui.exe` using `winres`. When compiling on Windows (`cargo build --release`), the resulting executable displays the JumpChamp icon on the Desktop and in File Explorer.
+* **Linux (Desktop Launcher & Menu Icon)**:
+  Linux desktop environments (GNOME, KDE, XFCE) read `.desktop` launcher files. Run the included helper script to install the desktop shortcut and high-res icon:
+  ```bash
+  ./install_desktop_shortcut.sh
+  ```
+  This installs `JumpChamp` to your Application Menu and places a launchable shortcut on `~/Desktop`.
+* **macOS (`.app` Bundle Icon)**:
+  macOS uses `.app` bundles configured via `[package.metadata.bundle]` in `Cargo.toml`. Building with `cargo-bundle` automatically packages `JumpChamp.app` with `AppIcon.icns`:
+  ```bash
+  cargo install cargo-bundle
+  cargo bundle --release --bin jumpchamp_gui
+  ```
+
+
 
 ---
 

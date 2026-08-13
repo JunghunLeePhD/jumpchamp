@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=JumpChamp
+Comment=Interactive desktop application for exploring prime gap distributions
+Exec=jumpchamp_gui
+Icon=jumpchamp
+Categories=Science;Math;Education;
+Terminal=false
+StartupWMClass=jumpchamp_gui

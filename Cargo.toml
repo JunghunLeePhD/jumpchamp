@@ -33,3 +33,6 @@ version = "0.1.0"
 copyright = "Copyright (c) 2026"
 short_description = "JumpChamp Prime Gap Explorer"
 long_description = "Interactive desktop application for exploring prime gap distributions."
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

@@ -40,7 +40,7 @@ jobs:
 
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            asset_name: jumpchamp_gui-linux-x86_64
+            asset_name: JumpChamp-linux-x86_64.tar.gz
             is_macos: false
 
     steps:
@@ -76,7 +76,12 @@ jobs:
             cp target/${{ matrix.target }}/release/jumpchamp_gui.exe ${{ matrix.asset_name }}
           else
             cargo build --release --target ${{ matrix.target }} --bin jumpchamp_gui
-            cp target/${{ matrix.target }}/release/jumpchamp_gui ${{ matrix.asset_name }}
+            mkdir -p JumpChamp-linux-x86_64/assets
+            cp target/${{ matrix.target }}/release/jumpchamp_gui JumpChamp-linux-x86_64/
+            cp install_desktop_shortcut.sh JumpChamp-linux-x86_64/
+            cp assets/jumpchamp.desktop JumpChamp-linux-x86_64/assets/
+            cp assets/512x512.png JumpChamp-linux-x86_64/assets/
+            tar -czvf ${{ matrix.asset_name }} JumpChamp-linux-x86_64
           fi
         shell: bash
 
@@ -124,8 +129,21 @@ jobs:
             ### 📦 Downloads:
             - **macOS (Apple Silicon M1/M2/M3/M4)**: `JumpChamp-macos-arm64.app.zip` *(Double-clickable .app bundle)*
             - **macOS (Intel x86_64)**: `JumpChamp-macos-intel-x86_64.app.zip` *(Double-clickable .app bundle)*
-            - **Windows (64-bit)**: `jumpchamp_gui-windows-x86_64.exe`
-            - **Linux (x86_64)**: `jumpchamp_gui-linux-x86_64`
+            - **Windows (64-bit)**: `jumpchamp_gui-windows-x86_64.exe` *(Pre-embedded desktop icon)*
+            - **Linux (x86_64)**: `JumpChamp-linux-x86_64.tar.gz` *(Includes desktop shortcut installer)*
+
+            ---
+
+            ### 🐧 Linux Installation Instructions:
+            1. Download and extract `JumpChamp-linux-x86_64.tar.gz`:
+               ```bash
+               tar -xzvf JumpChamp-linux-x86_64.tar.gz
+               cd JumpChamp-linux-x86_64
+               ```
+            2. Run the shortcut installer:
+               ```bash
+               ./install_desktop_shortcut.sh
+               ```
 
             ---
 
