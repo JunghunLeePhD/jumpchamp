@@ -2,6 +2,7 @@
 // Interactive Chart Panel — [0, 1] Normalized Bar Heights & Hover Expand
 // ============================================================================
 
+use std::collections::HashSet;
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
 use crate::gui::state::AppState;
 use crate::gui::theme::{self, viridis_color};
@@ -82,7 +83,21 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
             // Detect hovered bar index in plot space
             let hovered_idx = plot_ui.pointer_coordinate().map(|pt| pt.x.round() as i32);
 
-            let mut texts = Vec::new();
+            // Identify top 3 gaps by frequency (count) to ensure their labels remain visible even when zoomed out
+            let mut indexed_counts: Vec<(usize, u64)> = display_data
+                .iter()
+                .enumerate()
+                .map(|(i, &(_, cnt))| (i, cnt))
+                .collect();
+            indexed_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let top3_indices: HashSet<usize> = indexed_counts
+                .iter()
+                .take(3)
+                .map(|&(i, _)| i)
+                .collect();
+
+            let mut all_texts = Vec::new();
+            let mut top3_texts = Vec::new();
 
             let bars: Vec<Bar> = display_data
                 .iter()
@@ -92,6 +107,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     let pct = prob * 100.0;
                     let intensity = count as f64 / max_count;
                     let is_hovered = hovered_idx == Some(i as i32);
+                    let is_top3 = top3_indices.contains(&i);
 
                     let mut color = viridis_color(intensity);
                     if is_hovered {
@@ -107,23 +123,29 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
                     // 1. Top Percentage Annotation (if enabled)
                     if state.show_pct_labels {
-                        texts.push(
-                            Text::new(
-                                PlotPoint::new(x_pos, prob + max_prob * 0.03),
-                                format!("{pct:.1}%"),
-                            )
-                            .color(if is_hovered { accent } else { text_pri }),
-                        );
+                        let pct_text = Text::new(
+                            PlotPoint::new(x_pos, prob + max_prob * 0.03),
+                            format!("{pct:.1}%"),
+                        )
+                        .color(if is_hovered { accent } else { text_pri });
+
+                        if is_top3 {
+                            top3_texts.push(pct_text.clone());
+                        }
+                        all_texts.push(pct_text);
                     }
 
                     // 2. Bottom Gap Size Label (beneath y = 0 baseline)
-                    texts.push(
-                        Text::new(
-                            PlotPoint::new(x_pos, -max_prob * 0.04),
-                            format!("{gap}"),
-                        )
-                        .color(if is_hovered { text_pri } else { text_sec }),
-                    );
+                    let gap_text = Text::new(
+                        PlotPoint::new(x_pos, -max_prob * 0.04),
+                        format!("{gap}"),
+                    )
+                    .color(if is_hovered { text_pri } else { text_sec });
+
+                    if is_top3 {
+                        top3_texts.push(gap_text.clone());
+                    }
+                    all_texts.push(gap_text);
 
                     // Expand width (0.78 -> 0.95) and add accent outline stroke when hovered
                     let (bar_width, bar_stroke) = if is_hovered {
@@ -155,11 +177,17 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
             plot_ui.bar_chart(BarChart::new(bars));
 
-            // Adaptive Level-of-Detail (LOD): Only render text labels when zoomed in (<= 25 visible bars)
+            // Adaptive Level-of-Detail (LOD):
+            // When zoomed in (<= 25 visible bars), render all bar annotations.
+            // When zoomed out (> 25 visible bars), render annotations for the Top 3 gaps.
             let bounds = plot_ui.plot_bounds();
             let visible_range = (bounds.max()[0] - bounds.min()[0]).abs();
             if visible_range <= 25.0 {
-                for txt in texts {
+                for txt in all_texts {
+                    plot_ui.text(txt);
+                }
+            } else {
+                for txt in top3_texts {
                     plot_ui.text(txt);
                 }
             }
