@@ -9,41 +9,58 @@ use crate::gui::utils::format_compact_num;
 /// Renders playback control buttons (Pause, Reverse, Play/Resume, Step Back, Step, Reset).
 fn render_playback_buttons(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
+    let btn_size = egui::vec2(26.0, 20.0);
+    let double_btn_size = egui::vec2(btn_size.x * 2.0 + ui.spacing().item_spacing.x, btn_size.y);
 
     if state.is_animating {
         if ui
-            .button("⏸")
+            .add_sized(double_btn_size, egui::Button::new("⏸"))
             .on_hover_text("Pause Growth Chart Animation")
             .clicked()
         {
             state.is_animating = false;
         }
     } else {
-        if ui.button("◀").clicked() {
+        if ui
+            .add_sized(btn_size, egui::Button::new("◀"))
+            .on_hover_text("Play Reverse Animation")
+            .clicked()
+        {
             action = SidebarAction::StartReverseAnimation;
         }
 
-        let play_label = if state.anim_current_val > state.min_val && state.anim_current_val < state.max_val {
-            "▶"
-        } else {
-            "▶"
-        };
-        if ui.button(play_label).clicked() {
+        if ui
+            .add_sized(btn_size, egui::Button::new("▶"))
+            .on_hover_text("Play Forward Animation")
+            .clicked()
+        {
             action = SidebarAction::StartAnimation;
         }
     }
 
-    if ui.button("⏮").clicked() {
+    if ui
+        .add_sized(btn_size, egui::Button::new("⏮"))
+        .on_hover_text("Step Back One Frame")
+        .clicked()
+    {
         state.is_animating = false;
         action = SidebarAction::StepBackAnimation;
     }
 
-    if ui.button("⏭").clicked() {
+    if ui
+        .add_sized(btn_size, egui::Button::new("⏭"))
+        .on_hover_text("Step Forward One Frame")
+        .clicked()
+    {
         state.is_animating = false;
         action = SidebarAction::StepAnimation;
     }
 
-    if ui.button("↺").clicked() {
+    if ui
+        .add_sized(btn_size, egui::Button::new("↺"))
+        .on_hover_text("Reset to Start")
+        .clicked()
+    {
         state.is_animating = false;
         state.anim_current_val = state.min_val;
         action = SidebarAction::StepAnimation;
