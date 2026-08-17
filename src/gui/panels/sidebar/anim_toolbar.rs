@@ -87,7 +87,7 @@ fn render_speed_fps_slider(ui: &mut egui::Ui, state: &mut AppState) {
         egui::Slider::new(&mut state.anim_speed_fps, 1.0..=120.0)
             .step_by(1.0)
             .suffix(" FPS")
-            .clamp_to_range(true),
+            .clamping(egui::SliderClamping::Always),
     );
 
     if ui.button("30").on_hover_text("Set to 30 FPS").clicked() {
