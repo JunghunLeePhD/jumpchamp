@@ -7,7 +7,6 @@ use crate::gui::state::{DatasetMetadata, PrecomputedAnimData, SortOrder, WorkerC
 use crate::sieve::{small_primes, stream_prime_blocks_range};
 
 const HIST_SIZE: usize = 65_536;
-const RING_BUF_CAPACITY: usize = 16;
 const LARGE_RANGE_THRESHOLD: u64 = 100_000_000;
 const LARGE_BLOCK_SIZE: usize = 5_000_000;
 const SMALL_BLOCK_SIZE: usize = 1_000_000;
@@ -126,7 +125,8 @@ fn sieve_and_cache(
     let total_blocks = ((sieve_high - 2) / block_size).max(1);
     let mut current_block = 0usize;
 
-    let mut ring_buf = [(0u64, 0u64); RING_BUF_CAPACITY];
+    let ring_capacity = (k + 1).max(16);
+    let mut ring_buf = vec![(0u64, 0u64); ring_capacity];
     let mut head = 0usize;
     let mut count_in_buf = 0usize;
     let mut prime_idx = 0u64;
@@ -161,13 +161,13 @@ fn sieve_and_cache(
             }
 
             ring_buf[head] = (prime_idx, p);
-            head = (head + 1) % RING_BUF_CAPACITY;
+            head = (head + 1) % ring_capacity;
             if count_in_buf < k + 1 {
                 count_in_buf += 1;
             }
 
             if count_in_buf == k + 1 {
-                let tail = (head + RING_BUF_CAPACITY - (k + 1)) % RING_BUF_CAPACITY;
+                let tail = (head + ring_capacity - (k + 1)) % ring_capacity;
                 let (idx_start, p_start) = ring_buf[tail];
                 let p_chunk = idx_start / chunk_size;
 
@@ -327,7 +327,8 @@ fn run_precache_animation(
     let total_blocks = ((sieve_high - 2) / block_size).max(1);
     let mut current_block = 0usize;
 
-    let mut ring_buf = [(0u64, 0u64); RING_BUF_CAPACITY];
+    let ring_capacity = (k + 1).max(16);
+    let mut ring_buf = vec![(0u64, 0u64); ring_capacity];
     let mut head = 0usize;
     let mut count_in_buf = 0usize;
     let mut prime_idx = 0u64;
@@ -361,13 +362,13 @@ fn run_precache_animation(
             }
 
             ring_buf[head] = (prime_idx, p);
-            head = (head + 1) % RING_BUF_CAPACITY;
+            head = (head + 1) % ring_capacity;
             if count_in_buf < k + 1 {
                 count_in_buf += 1;
             }
 
             if count_in_buf == k + 1 {
-                let tail = (head + RING_BUF_CAPACITY - (k + 1)) % RING_BUF_CAPACITY;
+                let tail = (head + ring_capacity - (k + 1)) % ring_capacity;
                 let (idx_start, p_start) = ring_buf[tail];
 
                 if idx_start >= min_val && prime_idx <= max_val {
