@@ -81,11 +81,19 @@ fn render_current_val_input(ui: &mut egui::Ui, state: &mut AppState) -> SidebarA
 
 /// Renders speed FPS slider and quick speed preset buttons.
 fn render_speed_fps_slider(ui: &mut egui::Ui, state: &mut AppState) {
-    state.anim_speed_fps = 30.0;
-    if ui.button("30 FPS").clicked() {
+    ui.label("Speed:");
+    ui.add_sized(
+        [110.0_f32, 18.0_f32],
+        egui::Slider::new(&mut state.anim_speed_fps, 1.0..=120.0)
+            .step_by(1.0)
+            .suffix(" FPS")
+            .clamp_to_range(true),
+    );
+
+    if ui.button("30").on_hover_text("Set to 30 FPS").clicked() {
         state.anim_speed_fps = 30.0;
     }
-    if ui.button("60 FPS").clicked() {
+    if ui.button("60").on_hover_text("Set to 60 FPS").clicked() {
         state.anim_speed_fps = 60.0;
     }
     ui.separator();

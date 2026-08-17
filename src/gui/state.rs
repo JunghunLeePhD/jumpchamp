@@ -154,7 +154,7 @@ impl AppState {
             anim_direction: PlayDirection::Forward,
             anim_current_val: min_v,
             anim_step_size: default_step,
-            anim_speed_fps: 5.0,
+            anim_speed_fps: 30.0,
             last_frame_instant: None,
             anim_precomputed: None,
 
