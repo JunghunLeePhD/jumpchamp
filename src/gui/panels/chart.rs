@@ -80,8 +80,13 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
 
         .show(ui, |plot_ui| {
-            // Detect hovered bar index in plot space
-            let hovered_idx = plot_ui.pointer_coordinate().map(|pt| pt.x.round() as i32);
+            // Detect hovered bar index in plot space only when pointer is actively hovering over the plot canvas
+            let is_canvas_hovered = plot_ui.response().hovered();
+            let hovered_idx = if is_canvas_hovered {
+                plot_ui.pointer_coordinate().map(|pt| pt.x.round() as i32)
+            } else {
+                None
+            };
 
             // Identify top 3 gaps by frequency (count) to ensure their labels remain visible even when zoomed out
             let mut indexed_counts: Vec<(usize, u64)> = display_data
