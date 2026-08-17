@@ -199,6 +199,20 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     let prob = count as f64 / total_f64;
                     let pct = prob * 100.0;
 
+                    // Calculate frequency rank across all gaps (1-based, sorted by count descending)
+                    let rank = state
+                        .freq_data
+                        .iter()
+                        .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < gap))
+                        .count()
+                        + 1;
+
+                    let rank_color = if is_dark {
+                        egui::Color32::from_rgb(255, 200, 80)
+                    } else {
+                        egui::Color32::from_rgb(200, 130, 0)
+                    };
+
                     egui::show_tooltip_at_pointer(
                         &ctx,
                         layer_id,
@@ -215,6 +229,12 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                             .strong()
                                             .size(16.0)
                                             .color(accent),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("Rank: #{rank}"))
+                                            .strong()
+                                            .size(14.5)
+                                            .color(rank_color),
                                     );
                                     ui.label(
                                         egui::RichText::new(format!("Percentage: {pct:.2}%"))
