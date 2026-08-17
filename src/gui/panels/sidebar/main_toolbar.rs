@@ -28,10 +28,20 @@ fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
 }
 
 /// Renders the gap order parameter `k` input control.
-fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) {
+fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
+    let mut action = SidebarAction::None;
     ui.label("k:");
-    ui.add(egui::DragValue::new(&mut state.k).range(1..=usize::MAX));
+    let resp = ui
+        .add(egui::DragValue::new(&mut state.k).range(1..=100))
+        .on_hover_text("Step distance parameter k for prime gaps (Δ_k(n) = p_{n+k} - p_n).\nChanging k modifies the underlying mathematical gap distribution.");
+    if resp.changed() {
+        state.k = state.k.max(1);
+        if state.view_mode == ViewMode::Static && !state.freq_data.is_empty() {
+            action = SidebarAction::Compute;
+        }
+    }
     ui.separator();
+    action
 }
 
 /// Renders the numerical prime range control section (Min drag input, dual range slider, Max drag input).
@@ -129,11 +139,17 @@ pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
     ui.horizontal(|ui| {
         render_settings_button(ui, state);
         render_mode_selector(ui, state);
-        render_k_selector(ui, state);
+        let k_action = render_k_selector(ui, state);
+        if k_action != SidebarAction::None {
+            action = k_action;
+        }
         render_prime_range_section(ui, state, is_dark);
         render_rank_range_section(ui, state, is_dark);
         if state.view_mode == ViewMode::Static {
-            action = render_compute_action(ui, state);
+            let compute_action = render_compute_action(ui, state);
+            if compute_action != SidebarAction::None {
+                action = compute_action;
+            }
         }
     });
     ui.add_space(2.0);
