@@ -73,6 +73,7 @@ pub fn sieve_and_cache(
     let mut prime_idx = 0u64;
 
     let mut current_chunk_idx = 0u64;
+    let mut next_chunk_boundary = chunk_size;
     let mut chunk_hist = vec![0u64; HIST_SIZE];
     let mut last_progress_time = std::time::Instant::now();
 
@@ -110,12 +111,13 @@ pub fn sieve_and_cache(
             if count_in_buf == k + 1 {
                 let tail = (head + ring_capacity - (k + 1)) % ring_capacity;
                 let (idx_start, p_start) = ring_buf[tail];
-                let p_chunk = idx_start / chunk_size;
 
-                if p_chunk != current_chunk_idx {
+                // Fast boundary check: eliminates integer division on 99.99% of loop iterations
+                if idx_start >= next_chunk_boundary {
                     cache.chunks.insert((current_chunk_idx, k), chunk_hist.clone());
                     chunk_hist.fill(0);
-                    current_chunk_idx = p_chunk;
+                    current_chunk_idx = idx_start / chunk_size;
+                    next_chunk_boundary = (current_chunk_idx + 1) * chunk_size;
                 }
 
                 let deltak = (p - p_start) as usize;

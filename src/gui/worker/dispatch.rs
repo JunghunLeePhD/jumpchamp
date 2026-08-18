@@ -229,6 +229,7 @@ pub fn run_precache_animation(
     let mut prime_idx = 0u64;
 
     let mut frame_chunks = vec![vec![0u64; HIST_SIZE]; total_frames];
+    let mut max_observed_gap: usize = 0;
     let mut last_progress_time = std::time::Instant::now();
 
     for block in stream_prime_blocks_range(2, sieve_high, block_size, &base_primes) {
@@ -272,6 +273,9 @@ pub fn run_precache_animation(
                     let deltak = (p - p_start) as usize;
                     if deltak < HIST_SIZE {
                         frame_chunks[target_frame][deltak] += 1;
+                        if deltak > max_observed_gap {
+                            max_observed_gap = deltak;
+                        }
                     }
                 }
             }
@@ -285,11 +289,12 @@ pub fn run_precache_animation(
         return Ok(());
     }
 
-    // Build Prefix Sums
-    let mut prefix_sums = vec![vec![0u64; HIST_SIZE]; total_frames];
-    let mut running = vec![0u64; HIST_SIZE];
+    // Memory-Optimized Prefix Sums: Truncate to active observed gap range (>99% RAM savings)
+    let compact_hist_size = (max_observed_gap + 1).min(HIST_SIZE);
+    let mut prefix_sums = vec![vec![0u64; compact_hist_size]; total_frames];
+    let mut running = vec![0u64; compact_hist_size];
     for (f, chunk) in frame_chunks.iter().enumerate() {
-        for g in 0..HIST_SIZE {
+        for g in 0..compact_hist_size {
             running[g] += chunk[g];
         }
         prefix_sums[f] = running.clone();

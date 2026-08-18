@@ -15,8 +15,9 @@ _db_lock = threading.Lock()
 @st.cache_resource
 def get_db_connection() -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect()
+    num_threads = min(4, max(2, os.cpu_count() or 2))
     conn.sql("SET max_memory = '1GB';")
-    conn.sql("SET threads = 2;")
+    conn.sql(f"SET threads = {num_threads};")
     try:
         conn.sql("INSTALL httpfs; LOAD httpfs;")
     except Exception:

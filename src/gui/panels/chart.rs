@@ -1,8 +1,7 @@
 // ============================================================================
-// Interactive Chart Panel — [0, 1] Normalized Bar Heights & Hover Expand
+// Interactive Chart Panel — [0, 1] Normalized Bar Heights & Zero-Alloc LOD
 // ============================================================================
 
-use std::collections::HashSet;
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
 use crate::gui::state::AppState;
 use crate::gui::theme::{self, viridis_color};
@@ -88,21 +87,28 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                 None
             };
 
-            // Identify top 3 gaps by frequency (count) to ensure their labels remain visible even when zoomed out
-            let mut indexed_counts: Vec<(usize, u64)> = display_data
-                .iter()
-                .enumerate()
-                .map(|(i, &(_, cnt))| (i, cnt))
-                .collect();
-            indexed_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            let top3_indices: HashSet<usize> = indexed_counts
-                .iter()
-                .take(3)
-                .map(|&(i, _)| i)
-                .collect();
+            // Single O(N) pass to find top 3 gaps with zero heap allocations
+            let mut top3: [(usize, u64); 3] = [(0, 0), (0, 0), (0, 0)];
+            for (i, &(_, count)) in display_data.iter().enumerate() {
+                if count > top3[0].1 {
+                    top3[2] = top3[1];
+                    top3[1] = top3[0];
+                    top3[0] = (i, count);
+                } else if count > top3[1].1 {
+                    top3[2] = top3[1];
+                    top3[1] = (i, count);
+                } else if count > top3[2].1 {
+                    top3[2] = (i, count);
+                }
+            }
+            let is_top3_fn = |idx: usize| {
+                (!display_data.is_empty() && top3[0].0 == idx && top3[0].1 > 0)
+                    || (display_data.len() > 1 && top3[1].0 == idx && top3[1].1 > 0)
+                    || (display_data.len() > 2 && top3[2].0 == idx && top3[2].1 > 0)
+            };
 
-            let mut all_texts = Vec::new();
-            let mut top3_texts = Vec::new();
+            let mut all_texts = Vec::with_capacity(display_data.len() * 2);
+            let mut top3_texts = Vec::with_capacity(6);
 
             let bars: Vec<Bar> = display_data
                 .iter()
@@ -112,11 +118,10 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     let pct = prob * 100.0;
                     let intensity = count as f64 / max_count;
                     let is_hovered = hovered_idx == Some(i as i32);
-                    let is_top3 = top3_indices.contains(&i);
+                    let is_top3 = is_top3_fn(i);
 
                     let mut color = viridis_color(intensity);
                     if is_hovered {
-                        // Lighten Viridis color on hover for visual feedback
                         color = egui::Color32::from_rgb(
                             color.r().saturating_add(40),
                             color.g().saturating_add(40),
@@ -183,8 +188,6 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
             plot_ui.bar_chart(BarChart::new(bars));
 
             // Adaptive Level-of-Detail (LOD):
-            // When zoomed in (<= 25 visible bars), render all bar annotations.
-            // When zoomed out (> 25 visible bars), render annotations for the Top 3 gaps.
             let bounds = plot_ui.plot_bounds();
             let visible_range = (bounds.max()[0] - bounds.min()[0]).abs();
             if visible_range <= 25.0 {
@@ -204,7 +207,6 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     let prob = count as f64 / total_f64;
                     let pct = prob * 100.0;
 
-                    // Calculate frequency rank across all gaps (1-based, sorted by count descending)
                     let rank = state
                         .freq_data
                         .iter()
@@ -264,7 +266,6 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
         let min_cnt = display_data.iter().map(|&(_, cnt)| cnt).min().unwrap_or(0);
         let max_cnt = display_data.iter().map(|&(_, cnt)| cnt).max().unwrap_or(0);
 
-        // Container height matching half of the chart canvas height
         let meter_height = ((available_h - 90.0) * 0.5).clamp(100.0, 400.0);
 
         egui::Area::new(egui::Id::new("heatmap_count_meter"))
@@ -277,18 +278,16 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     .rounding(6.0_f32)
                     .inner_margin(6.0_f32)
                     .show(ui, |ui| {
-                        // Vertical strip + tick marks region allocation (2/3 bar width)
                         let strip_size = egui::vec2(75.0, meter_height);
                         let (rect, response) = ui.allocate_exact_size(strip_size, egui::Sense::hover());
                         if ui.is_rect_visible(rect) {
                             let painter = ui.painter();
-                            let bar_width = 9.5_f32; // 2/3 of original 14px
+                            let bar_width = 9.5_f32;
                             let bar_rect = egui::Rect::from_min_max(
                                 rect.min,
                                 egui::pos2(rect.min.x + bar_width, rect.max.y),
                             );
 
-                            // Render vertical Viridis gradient (Top = 1.0 Yellow, Bottom = 0.0 Dark Blue/Purple)
                             let steps = 60;
                             let step_h = bar_rect.height() / steps as f32;
                             for i in 0..steps {
@@ -299,14 +298,12 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                 sub_rect_painter(painter, bar_rect.min.x, y0, bar_rect.max.x, y1, color);
                             }
 
-                            // Outline around the vertical gradient bar
                             painter.rect_stroke(
                                 bar_rect,
                                 2.0,
                                 egui::Stroke::new(1.0_f32, card_border),
                             );
 
-                            // Multi-level ticks and scale text labels at 100%, 75%, 50%, 25%, 0%
                             let tick_levels = [
                                 (0.00_f32, 1.00_f64),
                                 (0.25_f32, 0.75_f64),
