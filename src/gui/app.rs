@@ -138,7 +138,7 @@ impl App for JumpChampApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            chart::render(ui, &self.state);
+            chart::render(ui, &mut self.state);
         });
 
         settings::render(ctx, &mut self.state);

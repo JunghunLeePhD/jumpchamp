@@ -90,6 +90,9 @@ pub struct AppState {
     pub top_max: usize,
     pub sort_by: SortOrder,
 
+    // Interactive Bar Selection (Persistent Focus / Pin Mode)
+    pub selected_gap: Option<u64>,
+
     // Settings & Limits
     pub show_settings: bool,
     pub theme_mode: ThemeMode,
@@ -141,6 +144,7 @@ impl AppState {
             top_min: 1,
             top_max: 20,
             sort_by: SortOrder::ByGapSize, // Default to Gap Mode (Fixed Numerical Order)
+            selected_gap: None,
 
             show_settings: false,
             theme_mode: ThemeMode::Dark,
@@ -187,6 +191,7 @@ impl AppState {
         self.top_min = 1;
         self.top_max = 20;
         self.sort_by = SortOrder::ByGapSize;
+        self.selected_gap = None;
 
         self.is_animating = false;
         self.is_precaching = false;

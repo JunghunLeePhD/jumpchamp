@@ -1,5 +1,5 @@
 // ============================================================================
-// Interactive Chart Panel — [0, 1] Normalized Bar Heights & Zero-Alloc LOD
+// Interactive Chart Panel — [0, 1] Normalized Bar Heights, Focus Lock & Hover
 // ============================================================================
 
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
@@ -7,7 +7,7 @@ use crate::gui::state::AppState;
 use crate::gui::theme::{self, viridis_color};
 use crate::gui::utils::{format_compact_num, format_thousands};
 
-pub fn render(ui: &mut egui::Ui, state: &AppState) {
+pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
     let is_dark = theme::is_dark(state.theme_mode);
     let accent = theme::accent_color(is_dark);
     let text_pri = theme::text_primary(is_dark);
@@ -51,41 +51,55 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
     let max_prob = max_count / total_f64;
     let bars_len = display_data.len().max(1) as f64;
 
-    // Extract ctx and layer_id prior to Plot::show to avoid borrow checker conflict on ui
     let ctx = ui.ctx().clone();
     let layer_id = ui.layer_id();
     let available_h = ui.available_height();
     let y_axis_label = format!("Probability P(Δ_{}) [0, 1]", state.k);
 
+    let mut new_selected_gap = state.selected_gap;
+    let mut hovered_item: Option<(usize, u64, u64)> = None; // (index, gap, count)
+
     Plot::new("histogram")
         .width(ui.available_width())
         .height(ui.available_height() - 2.0)
-        .set_margin_fraction(egui::Vec2::ZERO) // Fill 100% width and height without edge padding
+        .set_margin_fraction(egui::Vec2::ZERO)
         .y_axis_label(y_axis_label)
-        .show_grid(false) // Disable automatic grid to eliminate negative grid lines
-
-        .show_x(false)    // Hide default X-axis line & tick numbers
-        .show_y(false)    // Hide default Y-axis cursor line frequency text
-        .show_axes([false, false]) // Remove all axis ticks and tick numbers
-
+        .show_grid(false)
+        .show_x(false)
+        .show_y(false)
+        .show_axes([false, false])
         .include_x(-0.5)
         .include_x(bars_len - 0.5)
         .include_y(-max_prob * 0.06)
-        .include_y(max_prob * 1.12)   // Headroom margin so top percentage labels are never cut off
-
-        .allow_zoom([false, false])   // Permanent 100% full-width and full-height framing lock
-        .allow_drag([false, false])   // Prevent canvas drag drift out of bounds
+        .include_y(max_prob * 1.12)
+        .allow_zoom([false, false])
+        .allow_drag([false, false])
         .allow_scroll(false)
-        .label_formatter(|_, _| String::new()) // Suppress default built-in plot hover line text
-
+        .label_formatter(|_, _| String::new())
         .show(ui, |plot_ui| {
-            // Detect hovered bar index in plot space only when pointer is actively hovering over the plot canvas
             let is_canvas_hovered = plot_ui.response().hovered();
             let hovered_idx = if is_canvas_hovered {
                 plot_ui.pointer_coordinate().map(|pt| pt.x.round() as i32)
             } else {
                 None
             };
+
+            // Handle Bar Click Selection / Deselection (Toggle Focus Lock)
+            if plot_ui.response().clicked() {
+                if let Some(coord) = plot_ui.pointer_coordinate() {
+                    let clicked_idx = coord.x.round() as i32;
+                    if clicked_idx >= 0 && (clicked_idx as usize) < display_data.len() {
+                        let clicked_gap = display_data[clicked_idx as usize].0;
+                        if new_selected_gap == Some(clicked_gap) {
+                            new_selected_gap = None; // Deselect on clicking the same bar
+                        } else {
+                            new_selected_gap = Some(clicked_gap); // Select newly clicked bar
+                        }
+                    } else {
+                        new_selected_gap = None; // Deselect when clicking empty space
+                    }
+                }
+            }
 
             // Single O(N) pass to find top 3 gaps with zero heap allocations
             let mut top3: [(usize, u64); 3] = [(0, 0), (0, 0), (0, 0)];
@@ -118,10 +132,22 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     let pct = prob * 100.0;
                     let intensity = count as f64 / max_count;
                     let is_hovered = hovered_idx == Some(i as i32);
+                    let is_selected = new_selected_gap == Some(gap);
                     let is_top3 = is_top3_fn(i);
 
-                    let mut color = viridis_color(intensity);
                     if is_hovered {
+                        hovered_item = Some((i, gap, count));
+                    }
+
+                    let mut color = viridis_color(intensity);
+                    if is_selected {
+                        // Vivid gold/amber for pinned bar selection
+                        color = if is_dark {
+                            egui::Color32::from_rgb(255, 215, 0)
+                        } else {
+                            egui::Color32::from_rgb(230, 160, 0)
+                        };
+                    } else if is_hovered {
                         color = egui::Color32::from_rgb(
                             color.r().saturating_add(40),
                             color.g().saturating_add(40),
@@ -131,34 +157,52 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
 
                     let x_pos = i as f64;
 
-                    // 1. Top Percentage Annotation (if enabled)
+                    // 1. Top Percentage Annotation
                     if state.show_pct_labels {
+                        let text_color = if is_selected {
+                            accent
+                        } else if is_hovered {
+                            accent
+                        } else {
+                            text_pri
+                        };
+
                         let pct_text = Text::new(
                             PlotPoint::new(x_pos, prob + max_prob * 0.03),
                             format!("{pct:.1}%"),
                         )
-                        .color(if is_hovered { accent } else { text_pri });
+                        .color(text_color);
 
-                        if is_top3 {
+                        if is_top3 || is_selected {
                             top3_texts.push(pct_text.clone());
                         }
                         all_texts.push(pct_text);
                     }
 
-                    // 2. Bottom Gap Size Label (beneath y = 0 baseline)
+                    // 2. Bottom Gap Size Label
+                    let gap_color = if is_selected {
+                            accent
+                    } else if is_hovered {
+                        text_pri
+                    } else {
+                        text_sec
+                    };
+
                     let gap_text = Text::new(
                         PlotPoint::new(x_pos, -max_prob * 0.04),
                         format!("{gap}"),
                     )
-                    .color(if is_hovered { text_pri } else { text_sec });
+                    .color(gap_color);
 
-                    if is_top3 {
+                    if is_top3 || is_selected {
                         top3_texts.push(gap_text.clone());
                     }
                     all_texts.push(gap_text);
 
-                    // Expand width (0.78 -> 0.95) and add accent outline stroke when hovered
-                    let (bar_width, bar_stroke) = if is_hovered {
+                    // Width and outline stroke (Prominent stroke on selected/hovered)
+                    let (bar_width, bar_stroke) = if is_selected {
+                        (0.95, egui::Stroke::new(2.5_f32, accent))
+                    } else if is_hovered {
                         (0.95, egui::Stroke::new(2.0_f32, accent))
                     } else {
                         (0.78, egui::Stroke::NONE)
@@ -171,7 +215,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                 })
                 .collect();
 
-            // Draw 4 positive horizontal reference grid lines (if enabled)
+            // Draw 4 positive horizontal reference grid lines
             if state.show_grid_lines {
                 let grid_c = theme::grid_color(is_dark);
                 for fraction in [0.25, 0.50, 0.75, 1.00] {
@@ -200,66 +244,143 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                 }
             }
 
-            // High-contrast floating card tooltip with shadow box & border
-            if let Some(idx_val) = hovered_idx {
-                if idx_val >= 0 && (idx_val as usize) < display_data.len() {
-                    let (gap, count) = display_data[idx_val as usize];
-                    let prob = count as f64 / total_f64;
-                    let pct = prob * 100.0;
+            // Transient Hover Tooltip Card
+            if let Some((_, gap, count)) = hovered_item {
+                let prob = count as f64 / total_f64;
+                let pct = prob * 100.0;
 
-                    let rank = state
-                        .freq_data
-                        .iter()
-                        .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < gap))
-                        .count()
-                        + 1;
+                let rank = state
+                    .freq_data
+                    .iter()
+                    .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < gap))
+                    .count()
+                    + 1;
 
-                    let rank_color = if is_dark {
-                        egui::Color32::from_rgb(255, 200, 80)
-                    } else {
-                        egui::Color32::from_rgb(200, 130, 0)
-                    };
+                let rank_color = if is_dark {
+                    egui::Color32::from_rgb(255, 200, 80)
+                } else {
+                    egui::Color32::from_rgb(200, 130, 0)
+                };
 
-                    egui::show_tooltip_at_pointer(
-                        &ctx,
-                        layer_id,
-                        egui::Id::new("chart_hover_card"),
-                        |ui| {
-                            egui::Frame::none()
-                                .fill(card_bg)
-                                .stroke(egui::Stroke::new(1.0_f32, card_border))
-                                .rounding(6.0_f32)
-                                .inner_margin(8.0_f32)
-                                .show(ui, |ui| {
+                let is_this_pinned = new_selected_gap == Some(gap);
+
+                egui::show_tooltip_at_pointer(
+                    &ctx,
+                    layer_id,
+                    egui::Id::new("chart_hover_card"),
+                    |ui| {
+                        egui::Frame::none()
+                            .fill(card_bg)
+                            .stroke(egui::Stroke::new(1.0_f32, card_border))
+                            .rounding(6.0_f32)
+                            .inner_margin(8.0_f32)
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new(format!("📊 {}-Step Gap (Δ_{}) = {gap}", state.k, state.k))
                                             .strong()
                                             .size(16.0)
                                             .color(accent),
                                     );
-                                    ui.label(
-                                        egui::RichText::new(format!("Rank: #{rank}"))
-                                            .strong()
-                                            .size(14.5)
-                                            .color(rank_color),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(format!("Percentage: {pct:.2}%"))
-                                            .strong()
-                                            .size(15.0)
-                                            .color(text_pri),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(format!("Count: {}", format_thousands(count)))
-                                            .size(14.0)
-                                            .color(text_sec),
-                                    );
+                                    if is_this_pinned {
+                                        ui.colored_label(egui::Color32::YELLOW, "📌 PINNED");
+                                    }
                                 });
-                        },
-                    );
-                }
+                                ui.label(
+                                    egui::RichText::new(format!("Rank: #{rank}"))
+                                        .strong()
+                                        .size(14.5)
+                                        .color(rank_color),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("Percentage: {pct:.2}%"))
+                                        .strong()
+                                        .size(15.0)
+                                        .color(text_pri),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("Count: {}", format_thousands(count)))
+                                        .size(14.0)
+                                        .color(text_sec),
+                                );
+                                ui.add_space(2.0);
+                                ui.label(
+                                    egui::RichText::new(if is_this_pinned { "Click to unpin" } else { "Click to lock focus" })
+                                        .italics()
+                                        .size(11.0)
+                                        .color(text_sec),
+                                );
+                            });
+                    },
+                );
             }
         });
+
+    state.selected_gap = new_selected_gap;
+
+    // Persistent Pinned Focus HUD Card (Top-Left overlay when a gap is selected and mouse is not hovering)
+    if let Some(pinned_gap) = state.selected_gap {
+        if hovered_item.is_none() {
+            if let Some(&(_, count)) = state.freq_data.iter().find(|&&(g, _)| g == pinned_gap) {
+                let prob = count as f64 / total_f64;
+                let pct = prob * 100.0;
+
+                let rank = state
+                    .freq_data
+                    .iter()
+                    .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < pinned_gap))
+                    .count()
+                    + 1;
+
+                let rank_color = if is_dark {
+                    egui::Color32::from_rgb(255, 200, 80)
+                } else {
+                    egui::Color32::from_rgb(200, 130, 0)
+                };
+
+                egui::Area::new(egui::Id::new("pinned_focus_hud_card"))
+                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(16.0, 92.0))
+                    .interactable(true)
+                    .show(&ctx, |ui| {
+                        egui::Frame::none()
+                            .fill(card_bg)
+                            .stroke(egui::Stroke::new(1.5_f32, accent))
+                            .rounding(6.0_f32)
+                            .inner_margin(8.0_f32)
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("📌 Focused Gap Δ_{} = {pinned_gap}", state.k))
+                                            .strong()
+                                            .size(15.0)
+                                            .color(accent),
+                                    );
+                                    if ui.button("✖").on_hover_text("Unpin focus").clicked() {
+                                        state.selected_gap = None;
+                                    }
+                                });
+                                ui.label(
+                                    egui::RichText::new(format!("Rank: #{rank}"))
+                                        .strong()
+                                        .size(14.0)
+                                        .color(rank_color),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("Percentage: {pct:.2}%"))
+                                        .strong()
+                                        .size(14.5)
+                                        .color(text_pri),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("Count: {}", format_thousands(count)))
+                                        .size(13.5)
+                                        .color(text_sec),
+                                );
+                            });
+                    });
+            }
+        }
+    }
 
     // Floating Vertical Heat Map Count Meter on the top-right side of the chart canvas
     if state.show_heatmap_meter && !display_data.is_empty() {
