@@ -19,61 +19,8 @@ use jumpchamp::analysis::{
     apply_interval, apply_offset_interval, count_frequencies, format_report,
     k_step_gaps, k_step_gaps_from_gaps, stream_gaps, stream_primes,
 };
+use jumpchamp::config::AnalyzeConfig;
 use std::{env, fs::File, path::Path, time::Instant};
-
-// ============================================================================
-// Analyzer Configuration
-// ============================================================================
-
-#[derive(Debug, Clone)]
-struct AnalyzeConfig {
-    k: usize,
-    min_idx: u64,
-    max_idx: u64,
-    file_path: String,
-    force: bool,
-}
-
-impl AnalyzeConfig {
-    fn from_args(args: &[String]) -> Self {
-        let force = args.iter().any(|a| a == "--force" || a == "-f");
-        let positional: Vec<String> = args
-            .iter()
-            .skip(1)
-            .filter(|a| *a != "--force" && *a != "-f")
-            .cloned()
-            .collect();
-
-        Self {
-            k: positional.get(0).and_then(|s| s.parse().ok()).unwrap_or(2),
-            min_idx: positional.get(1).and_then(|s| s.parse().ok()).unwrap_or(1),
-            max_idx: positional.get(2).and_then(|s| s.parse().ok()).unwrap_or(u64::MAX),
-            file_path: positional.get(3).cloned().unwrap_or_else(|| "primes.parquet".into()),
-            force,
-        }
-    }
-
-    /// Derives the expected gaps database path: `gaps{k}.parquet` or `gaps.parquet`.
-    fn gaps_path(&self) -> String {
-        let filename = format!("gaps{}.parquet", self.k);
-        let path = Path::new(&self.file_path);
-        if let Some(parent) = path.parent() {
-            if parent != Path::new("") {
-                let target = parent.join(&filename);
-                if target.exists() {
-                    return target.to_string_lossy().into_owned();
-                }
-            }
-        }
-        if Path::new(&filename).exists() {
-            filename
-        } else if Path::new("gaps.parquet").exists() {
-            "gaps.parquet".into()
-        } else {
-            filename
-        }
-    }
-}
 
 // ============================================================================
 // Main Entry Point

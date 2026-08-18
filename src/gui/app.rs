@@ -1,10 +1,14 @@
 use crossbeam_channel::unbounded;
 use eframe::App;
 
-use crate::gui::panels::{chart, settings, sidebar, sidebar::SidebarAction};
-use crate::gui::state::{AppState, WorkerCommand, WorkerResult};
+use crate::gui::animation::{
+    advance_anim_backward, advance_anim_forward, dispatch_anim_frame, dispatch_cancel,
+    dispatch_compute, dispatch_start_animation, dispatch_step_animation,
+    dispatch_step_back_animation,
+};
+use crate::gui::panels::{chart, settings, sidebar, sidebar::SidebarAction, status_bar};
+use crate::gui::state::{AppState, PlayDirection, WorkerResult};
 use crate::gui::theme::apply_theme;
-use crate::gui::utils::format_compact_num;
 use crate::gui::worker::spawn_worker;
 
 pub struct JumpChampApp {
@@ -25,161 +29,7 @@ impl JumpChampApp {
         app
     }
 
-    fn dispatch_compute(&mut self) {
-        self.state.is_loading = true;
-        self.state.progress = 0.0;
-        self.state.error_msg = None;
-
-        let cmd = WorkerCommand::ComputeGaps {
-            min_val: self.state.min_val,
-            max_val: self.state.max_val,
-            k: self.state.k,
-            top_min: self.state.top_min,
-            top_max: self.state.top_max,
-            sort_by: self.state.sort_by.clone(),
-        };
-        self.state.cmd_tx.send(cmd).ok();
-    }
-
-    fn dispatch_anim_frame(&mut self) {
-        if !self.state.update_freq_from_precomputed() {
-            self.state.is_frame_in_flight = true;
-            let min_range = self.state.min_val;
-            let max_range = self.state.anim_current_val.max(self.state.min_val);
-
-            let cmd = WorkerCommand::ComputeGaps {
-                min_val: min_range,
-                max_val: max_range,
-                k: self.state.k,
-                top_min: self.state.top_min,
-                top_max: self.state.top_max,
-                sort_by: self.state.sort_by.clone(),
-            };
-            self.state.cmd_tx.send(cmd).ok();
-        }
-    }
-
-    fn advance_anim_forward(&mut self) -> bool {
-        if self.state.anim_current_val >= self.state.max_val {
-            self.state.is_animating = false;
-            false
-        } else {
-            self.state.anim_current_val =
-                (self.state.anim_current_val + self.state.anim_step_size).min(self.state.max_val);
-            true
-        }
-    }
-
-    fn advance_anim_backward(&mut self) -> bool {
-        if self.state.anim_current_val <= self.state.min_val {
-            self.state.is_animating = false;
-            false
-        } else {
-            self.state.anim_current_val =
-                self.state.anim_current_val.saturating_sub(self.state.anim_step_size).max(self.state.min_val);
-            true
-        }
-    }
-
-    fn dispatch_step_animation(&mut self) {
-        self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
-        if self.state.anim_current_val >= self.state.max_val {
-            self.state.anim_current_val = self.state.min_val;
-        } else {
-            self.advance_anim_forward();
-        }
-        self.dispatch_anim_frame();
-    }
-
-    fn dispatch_step_back_animation(&mut self) {
-        self.state.anim_direction = crate::gui::state::PlayDirection::Reverse;
-        if self.state.anim_current_val <= self.state.min_val {
-            self.state.anim_current_val = self.state.max_val;
-        } else {
-            self.advance_anim_backward();
-        }
-        self.dispatch_anim_frame();
-    }
-
-    fn dispatch_start_animation(&mut self) {
-        self.state.anim_direction = crate::gui::state::PlayDirection::Forward;
-        self.state.recalculate_anim_300_frames();
-        if self.state.anim_current_val >= self.state.max_val {
-            self.state.anim_current_val = self.state.min_val;
-        }
-
-        let needs_precache = match &self.state.anim_precomputed {
-            Some(data) => data.min_val != self.state.min_val || data.max_val != self.state.max_val || data.k != self.state.k,
-            None => true,
-        };
-
-        if needs_precache {
-            self.state.is_loading = true;
-            self.state.is_precaching = true;
-            self.state.is_animating = false;
-            self.state.progress = 0.0;
-            self.state.error_msg = None;
-
-            let cmd = WorkerCommand::PrecacheAnimation {
-                min_val: self.state.min_val,
-                max_val: self.state.max_val,
-                k: self.state.k,
-                total_frames: 300,
-            };
-            self.state.cmd_tx.send(cmd).ok();
-        } else {
-            self.state.is_animating = true;
-            self.state.last_frame_instant = None;
-            self.dispatch_anim_frame();
-        }
-    }
-
-    fn dispatch_start_reverse_animation(&mut self) {
-        self.state.anim_direction = crate::gui::state::PlayDirection::Reverse;
-        self.state.recalculate_anim_300_frames();
-        if self.state.anim_current_val <= self.state.min_val {
-            self.state.anim_current_val = self.state.max_val;
-        }
-
-        let needs_precache = match &self.state.anim_precomputed {
-            Some(data) => data.min_val != self.state.min_val || data.max_val != self.state.max_val || data.k != self.state.k,
-            None => true,
-        };
-
-        if needs_precache {
-            self.state.is_loading = true;
-            self.state.is_precaching = true;
-            self.state.is_animating = false;
-            self.state.progress = 0.0;
-            self.state.error_msg = None;
-
-            let cmd = WorkerCommand::PrecacheAnimation {
-                min_val: self.state.min_val,
-                max_val: self.state.max_val,
-                k: self.state.k,
-                total_frames: 300,
-            };
-            self.state.cmd_tx.send(cmd).ok();
-        } else {
-            self.state.is_animating = true;
-            self.state.last_frame_instant = None;
-            self.dispatch_anim_frame();
-        }
-    }
-
-    fn dispatch_cancel(&mut self) {
-        self.state.cmd_tx.send(WorkerCommand::Cancel).ok();
-        self.state.is_loading = false;
-        self.state.is_animating = false;
-        self.state.is_precaching = false;
-        self.state.is_frame_in_flight = false;
-    }
-}
-
-impl App for JumpChampApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        apply_theme(ctx, self.state.theme_mode);
-
+    fn handle_worker_results(&mut self) {
         while let Ok(result) = self.state.res_rx.try_recv() {
             match result {
                 WorkerResult::Metadata(m) => self.state.metadata = Some(m),
@@ -210,13 +60,13 @@ impl App for JumpChampApp {
                         if self.state.is_precaching {
                             self.state.is_precaching = false;
                             self.state.is_animating = true;
-                            if self.state.anim_direction == crate::gui::state::PlayDirection::Forward {
+                            if self.state.anim_direction == PlayDirection::Forward {
                                 self.state.anim_current_val = self.state.min_val;
                             } else {
                                 self.state.anim_current_val = self.state.max_val;
                             }
                             self.state.last_frame_instant = None;
-                            self.dispatch_anim_frame();
+                            dispatch_anim_frame(&mut self.state);
                         }
                     }
                 }
@@ -229,8 +79,9 @@ impl App for JumpChampApp {
                 }
             }
         }
+    }
 
-        // Animation Timer Tick (Zero-latency precomputed playback)
+    fn tick_animation(&mut self, ctx: &egui::Context) {
         if self.state.is_animating && !self.state.is_loading {
             let now = std::time::Instant::now();
             let fps = self.state.anim_speed_fps.max(1.0);
@@ -244,88 +95,42 @@ impl App for JumpChampApp {
             if should_step {
                 self.state.last_frame_instant = Some(now);
                 let stepped = match self.state.anim_direction {
-                    crate::gui::state::PlayDirection::Forward => self.advance_anim_forward(),
-                    crate::gui::state::PlayDirection::Reverse => self.advance_anim_backward(),
+                    PlayDirection::Forward => advance_anim_forward(&mut self.state),
+                    PlayDirection::Reverse => advance_anim_backward(&mut self.state),
                 };
                 if stepped {
-                    self.dispatch_anim_frame();
+                    dispatch_anim_frame(&mut self.state);
                 }
             }
             ctx.request_repaint_after(target_delay);
         }
+    }
+}
+
+impl App for JumpChampApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        apply_theme(ctx, self.state.theme_mode);
+
+        self.handle_worker_results();
+        self.tick_animation(ctx);
 
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
-                ui.separator();
-                if self.state.is_precaching {
-                    let pct = (self.state.progress * 100.0) as u32;
-                    let block_info = if self.state.total_blocks > 0 {
-                        format!(" [Block {}/{}]", self.state.current_block, self.state.total_blocks)
-                    } else {
-                        String::new()
-                    };
-                    ui.label(format!(
-                        "⚡ PRE-CACHING ({pct}%{}): n = {} ~ {} for 0-delay playback...",
-                        block_info,
-                        format_compact_num(self.state.min_val),
-                        format_compact_num(self.state.max_val)
-                    ));
-                } else if self.state.is_animating {
-                    let dir_str = match self.state.anim_direction {
-                        crate::gui::state::PlayDirection::Forward => "▶ FORWARD",
-                        crate::gui::state::PlayDirection::Reverse => "◀ REVERSE",
-                    };
-                    ui.label(format!(
-                        "🎬 ANIMATING ({}): n = {} ~ {} (Bound: n = {})",
-                        dir_str,
-                        format_compact_num(self.state.min_val),
-                        format_compact_num(self.state.max_val),
-                        format_compact_num(self.state.anim_current_val)
-                    ));
-                } else {
-                    ui.label(format!(
-                        "📊 Prime Index Range: n = {} ~ {} (k={}, Rank={}~{})",
-                        format_compact_num(self.state.min_val),
-                        format_compact_num(self.state.max_val),
-                        self.state.k,
-                        self.state.top_min,
-                        self.state.top_max
-                    ));
-                }
-                ui.separator();
-                let latency_str = self
-                    .state
-                    .query_latency_ms
-                    .map(|ms| format!("{:.1} ms", ms))
-                    .unwrap_or_else(|| "-- ms".to_string());
-                ui.label(format!("⚡ Latency: {}", latency_str));
-
-                ui.separator();
-                if self.state.is_animating {
-                    let anim_prog = self.state.animation_progress();
-                    ui.add_sized(
-                        [90.0_f32, 16.0_f32],
-                        egui::ProgressBar::new(anim_prog).show_percentage(),
-                    );
-                } else if self.state.is_loading || self.state.is_precaching {
-                    ui.add_sized(
-                        [90.0_f32, 16.0_f32],
-                        egui::ProgressBar::new(self.state.progress).show_percentage(),
-                    );
-                }
-            });
+            status_bar::render(ui, &self.state);
         });
 
         egui::TopBottomPanel::top("control_bar")
             .resizable(false)
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
-                SidebarAction::Compute => self.dispatch_compute(),
-                SidebarAction::Cancel => self.dispatch_cancel(),
-                SidebarAction::StartAnimation => self.dispatch_start_animation(),
-                SidebarAction::StartReverseAnimation => self.dispatch_start_reverse_animation(),
-                SidebarAction::StepAnimation => self.dispatch_step_animation(),
-                SidebarAction::StepBackAnimation => self.dispatch_step_back_animation(),
+                SidebarAction::Compute => dispatch_compute(&mut self.state),
+                SidebarAction::Cancel => dispatch_cancel(&mut self.state),
+                SidebarAction::StartAnimation => {
+                    dispatch_start_animation(&mut self.state, PlayDirection::Forward)
+                }
+                SidebarAction::StartReverseAnimation => {
+                    dispatch_start_animation(&mut self.state, PlayDirection::Reverse)
+                }
+                SidebarAction::StepAnimation => dispatch_step_animation(&mut self.state),
+                SidebarAction::StepBackAnimation => dispatch_step_back_animation(&mut self.state),
                 SidebarAction::None => {}
             });
 
@@ -345,7 +150,6 @@ impl App for JumpChampApp {
         }
     }
 }
-
 
 pub fn run() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
@@ -367,4 +171,3 @@ pub fn run() -> eframe::Result<()> {
         Box::new(|cc| Ok(Box::new(JumpChampApp::new(cc)))),
     )
 }
-

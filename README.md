@@ -32,8 +32,8 @@ jumpchamp/
 │   └── devcontainer.json        # VS Code Dev Container settings
 ├── src/
 │   ├── lib.rs                   # Library root — declares all domain layers
-│   ├── config.rs                # Config struct & CLI arg parsing (generator)
-│   ├── main.rs                  # Analyzer binary (default entry point) — thin shell
+│   ├── config.rs                # Config (generator) & AnalyzeConfig (analyzer)
+│   ├── main.rs                  # Analyzer binary entry point (thin shell)
 │   ├── sieve/
 │   │   ├── mod.rs               # Re-exports basic, parallel, stream
 │   │   ├── basic.rs             # small_primes, sieve_segment (bitpacked odd-only sieve)
@@ -42,24 +42,42 @@ jumpchamp/
 │   ├── storage/
 │   │   ├── mod.rs               # Re-exports parquet, gaps_parquet
 │   │   ├── parquet.rs           # ParquetPrimeSink, get_existing_max_prime, copy_existing_parquet
-      └── gaps_parquet.rs      # GapsSink for storing (prime, gap) pairs
+│   │   └── gaps_parquet.rs      # GapsSink for storing single-column (deltak: u16) pairs
 │   ├── analysis/
 │   │   ├── mod.rs               # Re-exports gaps, report
 │   │   ├── gaps.rs              # stream_primes, apply_interval, k_step_gaps, record_gaps, count_residues, gap_transition_matrix
 │   │   └── report.rs            # format_report, format_record_gaps_report, format_residue_report
 │   ├── gui/
 │   │   ├── mod.rs               # GUI domain root
-│   │   ├── app.rs               # eframe::App implementation & update loop
+│   │   ├── animation.rs         # Animation state transitions & step dispatching
+│   │   ├── app.rs               # eframe::App window shell & update loop
 │   │   ├── state.rs             # AppState, WorkerCommand, WorkerResult
-│   │   ├── worker.rs            # Non-blocking background Parquet streaming thread
-│   │   ├── lttb.rs              # LTTB downsampling algorithm
-│   │   ├── theme.rs             # Viridis dark theme palette
-│   │   └── panels/              # Sidebar controls, egui_plot charts, TableBuilder table
+│   │   ├── theme.rs             # Viridis dark & light theme palettes
+│   │   ├── utils.rs             # Formatting utilities (numbers, thousands)
+│   │   ├── worker/
+│   │   │   ├── mod.rs           # Worker module root (re-exports spawn_worker)
+│   │   │   ├── dispatch.rs      # Non-blocking background worker thread & command loop
+│   │   │   └── engine.rs        # Sieve math, segment histogram caching & bounds calculation
+│   │   └── panels/
+│   │       ├── chart.rs         # Interactive egui_plot normalized histogram & heatmap meter
+│   │       ├── settings.rs      # Modal settings & theme preferences window
+│   │       ├── status_bar.rs    # Bottom telemetry status bar component
+│   │       └── sidebar/         # Top dual-thumb range sliders & toolbars
 │   └── bin/
 │       ├── build_primes.rs      # Prime database builder binary
 │       ├── build_gaps.rs        # Gap database builder binary
 │       └── jumpchamp_gui.rs     # Native desktop GUI entry point binary
-├── app.py                       # Streamlit dashboard (DuckDB-backed, prime gap visualization)
+├── jumpchamp_web/               # Streamlit web application package
+│   ├── __init__.py              # Web package root with clean exports
+│   ├── config.py                # Domain configuration types & loaders
+│   ├── ingestion.py             # Resumable Range downloads & URL resolution
+│   ├── database.py              # DuckDB query engine & data processing
+│   ├── components.py            # Streamlit UI components & Plotly charts
+│   └── runner.py                # Main application orchestrator
+├── app.py                       # Streamlit dashboard entry point (defaults to k=2)
+├── app2.py                      # 2-Step Prime Gap Explorer (k=2)
+├── app3.py                      # 3-Step Prime Gap Explorer (k=3)
+├── app_common.py                # Backward-compatible re-export facade
 ├── .gitignore                   # Ignores /target and *.parquet artifacts
 └── Cargo.toml                   # Dependencies (Rayon, Arrow, Parquet, egui, eframe)
 ```

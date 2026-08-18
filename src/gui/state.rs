@@ -224,23 +224,24 @@ impl AppState {
         false
     }
 
-    pub fn recalculate_dynamic_step(&mut self) {
+    /// Recalculates animation step size dynamically based on prime index range (targeting ~300 frames).
+    pub fn recalculate_anim_step(&mut self) {
         let range = self.max_val.saturating_sub(self.min_val);
         self.anim_step_size = (range / 300).max(1);
     }
 
+    pub fn recalculate_dynamic_step(&mut self) {
+        self.recalculate_anim_step();
+    }
+
     pub fn recalculate_anim_300_frames(&mut self) {
-        let range = self.max_val.saturating_sub(self.min_val);
-        self.anim_step_size = (range / 300).max(1);
+        self.recalculate_anim_step();
     }
 
     pub fn set_view_mode(&mut self, mode: ViewMode) {
         self.view_mode = mode;
         if mode == ViewMode::Animation {
-            self.recalculate_anim_300_frames();
+            self.recalculate_anim_step();
         }
     }
 }
-
-
-
