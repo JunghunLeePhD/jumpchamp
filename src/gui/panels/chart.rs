@@ -58,6 +58,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
 
     let mut new_selected_gap = state.selected_gap;
     let mut hovered_item: Option<(usize, u64, u64)> = None; // (index, gap, count)
+    let mut pinned_info: Option<(egui::Pos2, u64, u64, f64, usize)> = None; // (screen_pos, gap, count, pct, rank)
 
     Plot::new("histogram")
         .width(ui.available_width())
@@ -71,7 +72,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
         .include_x(-0.5)
         .include_x(bars_len - 0.5)
         .include_y(-max_prob * 0.06)
-        .include_y(max_prob * 1.12)
+        .include_y(max_prob * 1.15) // Extra headroom for anchored pinned tooltip card
         .allow_zoom([false, false])
         .allow_drag([false, false])
         .allow_scroll(false)
@@ -139,9 +140,22 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                         hovered_item = Some((i, gap, count));
                     }
 
+                    let x_pos = i as f64;
+
+                    // Compute Screen Position of the Pinned Bar's Peak for Anchored Tooltip
+                    if is_selected {
+                        let screen_pos = plot_ui.screen_from_plot(PlotPoint::new(x_pos, prob));
+                        let rank = state
+                            .freq_data
+                            .iter()
+                            .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < gap))
+                            .count()
+                            + 1;
+                        pinned_info = Some((screen_pos, gap, count, pct, rank));
+                    }
+
                     let mut color = viridis_color(intensity);
                     if is_selected {
-                        // Vivid gold/amber for pinned bar selection
                         color = if is_dark {
                             egui::Color32::from_rgb(255, 215, 0)
                         } else {
@@ -155,25 +169,16 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                         );
                     }
 
-                    let x_pos = i as f64;
-
-                    // 1. Top Percentage Annotation
-                    if state.show_pct_labels {
-                        let text_color = if is_selected {
-                            accent
-                        } else if is_hovered {
-                            accent
-                        } else {
-                            text_pri
-                        };
-
+                    // 1. Top Percentage Annotation (hide if pinned tooltip card is positioned right above it)
+                    if state.show_pct_labels && !is_selected {
+                        let text_color = if is_hovered { accent } else { text_pri };
                         let pct_text = Text::new(
                             PlotPoint::new(x_pos, prob + max_prob * 0.03),
                             format!("{pct:.1}%"),
                         )
                         .color(text_color);
 
-                        if is_top3 || is_selected {
+                        if is_top3 {
                             top3_texts.push(pct_text.clone());
                         }
                         all_texts.push(pct_text);
@@ -181,7 +186,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
 
                     // 2. Bottom Gap Size Label
                     let gap_color = if is_selected {
-                            accent
+                        accent
                     } else if is_hovered {
                         text_pri
                     } else {
@@ -244,142 +249,129 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
-            // Transient Hover Tooltip Card
+            // Transient Hover Tooltip Card (Shown when hovering over a different, non-pinned bar)
             if let Some((_, gap, count)) = hovered_item {
-                let prob = count as f64 / total_f64;
-                let pct = prob * 100.0;
+                if new_selected_gap != Some(gap) {
+                    let prob = count as f64 / total_f64;
+                    let pct = prob * 100.0;
 
-                let rank = state
-                    .freq_data
-                    .iter()
-                    .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < gap))
-                    .count()
-                    + 1;
+                    let rank = state
+                        .freq_data
+                        .iter()
+                        .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < gap))
+                        .count()
+                        + 1;
 
-                let rank_color = if is_dark {
-                    egui::Color32::from_rgb(255, 200, 80)
-                } else {
-                    egui::Color32::from_rgb(200, 130, 0)
-                };
+                    let rank_color = if is_dark {
+                        egui::Color32::from_rgb(255, 200, 80)
+                    } else {
+                        egui::Color32::from_rgb(200, 130, 0)
+                    };
 
-                let is_this_pinned = new_selected_gap == Some(gap);
-
-                egui::show_tooltip_at_pointer(
-                    &ctx,
-                    layer_id,
-                    egui::Id::new("chart_hover_card"),
-                    |ui| {
-                        egui::Frame::none()
-                            .fill(card_bg)
-                            .stroke(egui::Stroke::new(1.0_f32, card_border))
-                            .rounding(6.0_f32)
-                            .inner_margin(8.0_f32)
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
+                    egui::show_tooltip_at_pointer(
+                        &ctx,
+                        layer_id,
+                        egui::Id::new("chart_hover_card"),
+                        |ui| {
+                            egui::Frame::none()
+                                .fill(card_bg)
+                                .stroke(egui::Stroke::new(1.0_f32, card_border))
+                                .rounding(6.0_f32)
+                                .inner_margin(8.0_f32)
+                                .show(ui, |ui| {
                                     ui.label(
                                         egui::RichText::new(format!("📊 {}-Step Gap (Δ_{}) = {gap}", state.k, state.k))
                                             .strong()
                                             .size(16.0)
                                             .color(accent),
                                     );
-                                    if is_this_pinned {
-                                        ui.colored_label(egui::Color32::YELLOW, "📌 PINNED");
-                                    }
+                                    ui.label(
+                                        egui::RichText::new(format!("Rank: #{rank}"))
+                                            .strong()
+                                            .size(14.5)
+                                            .color(rank_color),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("Percentage: {pct:.2}%"))
+                                            .strong()
+                                            .size(15.0)
+                                            .color(text_pri),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("Count: {}", format_thousands(count)))
+                                            .size(14.0)
+                                            .color(text_sec),
+                                    );
+                                    ui.add_space(2.0);
+                                    ui.label(
+                                        egui::RichText::new("Click to lock focus")
+                                            .italics()
+                                            .size(11.0)
+                                            .color(text_sec),
+                                    );
                                 });
-                                ui.label(
-                                    egui::RichText::new(format!("Rank: #{rank}"))
-                                        .strong()
-                                        .size(14.5)
-                                        .color(rank_color),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!("Percentage: {pct:.2}%"))
-                                        .strong()
-                                        .size(15.0)
-                                        .color(text_pri),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!("Count: {}", format_thousands(count)))
-                                        .size(14.0)
-                                        .color(text_sec),
-                                );
-                                ui.add_space(2.0);
-                                ui.label(
-                                    egui::RichText::new(if is_this_pinned { "Click to unpin" } else { "Click to lock focus" })
-                                        .italics()
-                                        .size(11.0)
-                                        .color(text_sec),
-                                );
-                            });
-                    },
-                );
+                        },
+                    );
+                }
             }
         });
 
     state.selected_gap = new_selected_gap;
 
-    // Persistent Pinned Focus HUD Card (Top-Left overlay when a gap is selected and mouse is not hovering)
-    if let Some(pinned_gap) = state.selected_gap {
-        if hovered_item.is_none() {
-            if let Some(&(_, count)) = state.freq_data.iter().find(|&&(g, _)| g == pinned_gap) {
-                let prob = count as f64 / total_f64;
-                let pct = prob * 100.0;
+    // Always-Visible Tooltip Card Anchored Directly Above the Pinned Bar
+    if let Some((pinned_screen_pos, pinned_gap, count, pct, rank)) = pinned_info {
+        let rank_color = if is_dark {
+            egui::Color32::from_rgb(255, 200, 80)
+        } else {
+            egui::Color32::from_rgb(200, 130, 0)
+        };
 
-                let rank = state
-                    .freq_data
-                    .iter()
-                    .filter(|&&(g, cnt)| cnt > count || (cnt == count && g < pinned_gap))
-                    .count()
-                    + 1;
+        // Anchor slightly above the bar peak
+        let anchor_pos = egui::pos2(pinned_screen_pos.x, pinned_screen_pos.y - 10.0);
 
-                let rank_color = if is_dark {
-                    egui::Color32::from_rgb(255, 200, 80)
-                } else {
-                    egui::Color32::from_rgb(200, 130, 0)
-                };
-
-                egui::Area::new(egui::Id::new("pinned_focus_hud_card"))
-                    .anchor(egui::Align2::LEFT_TOP, egui::vec2(16.0, 92.0))
-                    .interactable(true)
-                    .show(&ctx, |ui| {
-                        egui::Frame::none()
-                            .fill(card_bg)
-                            .stroke(egui::Stroke::new(1.5_f32, accent))
-                            .rounding(6.0_f32)
-                            .inner_margin(8.0_f32)
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!("📌 Focused Gap Δ_{} = {pinned_gap}", state.k))
-                                            .strong()
-                                            .size(15.0)
-                                            .color(accent),
-                                    );
-                                    if ui.button("✖").on_hover_text("Unpin focus").clicked() {
-                                        state.selected_gap = None;
-                                    }
-                                });
-                                ui.label(
-                                    egui::RichText::new(format!("Rank: #{rank}"))
-                                        .strong()
-                                        .size(14.0)
-                                        .color(rank_color),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!("Percentage: {pct:.2}%"))
-                                        .strong()
-                                        .size(14.5)
-                                        .color(text_pri),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!("Count: {}", format_thousands(count)))
-                                        .size(13.5)
-                                        .color(text_sec),
-                                );
-                            });
+        egui::Area::new(egui::Id::new("pinned_bar_anchored_tooltip"))
+            .fixed_pos(anchor_pos)
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .interactable(true)
+            .show(&ctx, |ui| {
+                egui::Frame::none()
+                    .fill(card_bg)
+                    .stroke(egui::Stroke::new(1.5_f32, accent))
+                    .rounding(6.0_f32)
+                    .inner_margin(7.0_f32)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("📌 Gap Δ_{} = {pinned_gap}", state.k))
+                                    .strong()
+                                    .size(14.5)
+                                    .color(accent),
+                            );
+                            if ui.button("✖").on_hover_text("Unpin focus").clicked() {
+                                state.selected_gap = None;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("#{rank}"))
+                                    .strong()
+                                    .size(13.5)
+                                    .color(rank_color),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("{pct:.2}%"))
+                                    .strong()
+                                    .size(13.5)
+                                    .color(text_pri),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("({})", format_compact_num(count)))
+                                    .size(12.5)
+                                    .color(text_sec),
+                            );
+                        });
                     });
-            }
-        }
+            });
     }
 
     // Floating Vertical Heat Map Count Meter on the top-right side of the chart canvas
