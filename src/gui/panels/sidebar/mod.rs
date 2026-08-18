@@ -13,6 +13,7 @@ pub enum SidebarAction {
     None,
     Compute,
     Cancel,
+    Reset,
     StartAnimation,
     StartReverseAnimation,
     StepAnimation,

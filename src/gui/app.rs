@@ -123,6 +123,9 @@ impl App for JumpChampApp {
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
                 SidebarAction::Compute => dispatch_compute(&mut self.state),
                 SidebarAction::Cancel => dispatch_cancel(&mut self.state),
+                SidebarAction::Reset => {
+                    self.state.reset();
+                }
                 SidebarAction::StartAnimation => {
                     dispatch_start_animation(&mut self.state, PlayDirection::Forward)
                 }

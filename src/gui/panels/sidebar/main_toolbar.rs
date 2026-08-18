@@ -1,5 +1,5 @@
 // ============================================================================
-// Main Control Toolbar Component (Settings, k-Order, Prime Range, Rank, Action)
+// Main Control Toolbar Component (Settings, Reset, k-Order, Prime Range, Rank, Action)
 // ============================================================================
 
 use super::dual_slider::{render_dual_range_slider, render_dual_top_range_slider};
@@ -21,10 +21,23 @@ fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
 
 /// Renders the settings toggle button.
 fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
-    if ui.button("⚙").clicked() {
+    if ui.button("⚙").on_hover_text("Settings & Preferences").clicked() {
         state.show_settings = !state.show_settings;
     }
+}
+
+/// Renders the reset & clear cache button.
+fn render_reset_button(ui: &mut egui::Ui) -> SidebarAction {
+    let mut action = SidebarAction::None;
+    if ui
+        .button("🔄")
+        .on_hover_text("Reset & Clear Cache\nWipes all in-memory precomputations, clears worker segment cache, and restores initial launch state.")
+        .clicked()
+    {
+        action = SidebarAction::Reset;
+    }
     ui.separator();
+    action
 }
 
 /// Renders the gap order parameter `k` input control.
@@ -131,10 +144,10 @@ fn render_compute_action(ui: &mut egui::Ui, state: &AppState) -> SidebarAction {
             [80.0_f32, 18.0_f32],
             egui::ProgressBar::new(state.progress).show_percentage(),
         );
-        if ui.button("✖").clicked() {
+        if ui.button("✖").on_hover_text("Cancel current calculation").clicked() {
             return SidebarAction::Cancel;
         }
-    } else if ui.button("▶").clicked() {
+    } else if ui.button("▶").on_hover_text("Compute Prime Gap Distribution").clicked() {
         return SidebarAction::Compute;
     }
     SidebarAction::None
@@ -148,6 +161,10 @@ pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         render_settings_button(ui, state);
+        let reset_action = render_reset_button(ui);
+        if reset_action != SidebarAction::None {
+            action = reset_action;
+        }
         render_mode_selector(ui, state);
         let k_action = render_k_selector(ui, state);
         if k_action != SidebarAction::None {

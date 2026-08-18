@@ -31,6 +31,11 @@ pub fn spawn_worker(
                 Ok(WorkerCommand::Cancel) => {
                     cancel_flag.store(true, Ordering::SeqCst);
                 }
+                Ok(WorkerCommand::ClearCache) => {
+                    cancel_flag.store(true, Ordering::SeqCst);
+                    cache.chunks.clear();
+                    cache.chunks.shrink_to_fit();
+                }
                 Ok(WorkerCommand::ComputeGaps {
                     min_val,
                     max_val,

@@ -50,6 +50,7 @@ pub enum WorkerCommand {
         total_frames: usize,
     },
     Cancel,
+    ClearCache,
 }
 
 pub enum WorkerResult {
@@ -171,6 +172,43 @@ impl AppState {
             cmd_tx,
             res_rx,
         }
+    }
+
+    /// Resets the application state and clears all in-memory precomputations and worker caches back to launch defaults.
+    pub fn reset(&mut self) {
+        let min_v = 1u64;
+        let max_v = 1_000_000u64;
+        let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
+
+        self.view_mode = ViewMode::Static;
+        self.k = 2;
+        self.min_val = min_v;
+        self.max_val = max_v;
+        self.top_min = 1;
+        self.top_max = 20;
+        self.sort_by = SortOrder::ByGapSize;
+
+        self.is_animating = false;
+        self.is_precaching = false;
+        self.is_frame_in_flight = false;
+        self.anim_direction = PlayDirection::Forward;
+        self.anim_current_val = min_v;
+        self.anim_step_size = default_step;
+        self.anim_speed_fps = 30.0;
+        self.last_frame_instant = None;
+        self.anim_precomputed = None;
+
+        self.metadata = None;
+        self.freq_data.clear();
+        self.query_latency_ms = None;
+
+        self.is_loading = false;
+        self.progress = 0.0;
+        self.current_block = 0;
+        self.total_blocks = 0;
+        self.error_msg = None;
+
+        self.cmd_tx.send(WorkerCommand::ClearCache).ok();
     }
 
     pub fn animation_progress(&self) -> f32 {
