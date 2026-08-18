@@ -72,7 +72,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
         .include_x(-0.5)
         .include_x(bars_len - 0.5)
         .include_y(-max_prob * 0.06)
-        .include_y(max_prob * 1.15) // Extra headroom for anchored pinned tooltip card
+        .include_y(max_prob * 1.15) // Headroom for anchored pinned tooltip card
         .allow_zoom([false, false])
         .allow_drag([false, false])
         .allow_scroll(false)
@@ -318,7 +318,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
 
     state.selected_gap = new_selected_gap;
 
-    // Always-Visible Tooltip Card Anchored Directly Above the Pinned Bar
+    // Always-Visible Tooltip Card Anchored Directly Above the Pinned Bar (Clean, without X button)
     if let Some((pinned_screen_pos, pinned_gap, count, pct, rank)) = pinned_info {
         let rank_color = if is_dark {
             egui::Color32::from_rgb(255, 200, 80)
@@ -332,7 +332,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
         egui::Area::new(egui::Id::new("pinned_bar_anchored_tooltip"))
             .fixed_pos(anchor_pos)
             .pivot(egui::Align2::CENTER_BOTTOM)
-            .interactable(true)
+            .interactable(false)
             .show(&ctx, |ui| {
                 egui::Frame::none()
                     .fill(card_bg)
@@ -340,17 +340,12 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                     .rounding(6.0_f32)
                     .inner_margin(7.0_f32)
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(format!("📌 Gap Δ_{} = {pinned_gap}", state.k))
-                                    .strong()
-                                    .size(14.5)
-                                    .color(accent),
-                            );
-                            if ui.button("✖").on_hover_text("Unpin focus").clicked() {
-                                state.selected_gap = None;
-                            }
-                        });
+                        ui.label(
+                            egui::RichText::new(format!("📌 Gap Δ_{} = {pinned_gap}", state.k))
+                                .strong()
+                                .size(14.5)
+                                .color(accent),
+                        );
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(format!("#{rank}"))
