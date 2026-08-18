@@ -56,12 +56,13 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
     let ctx = ui.ctx().clone();
     let layer_id = ui.layer_id();
     let available_h = ui.available_height();
+    let y_axis_label = format!("Probability P(Δ_{}) [0, 1]", state.k);
 
     Plot::new("histogram")
         .width(ui.available_width())
         .height(ui.available_height() - 2.0)
         .set_margin_fraction(egui::Vec2::ZERO) // Fill 100% width and height without edge padding
-        .y_axis_label("Probability P(Δ_k) [0, 1]")
+        .y_axis_label(y_axis_label)
         .show_grid(false) // Disable automatic grid to eliminate negative grid lines
 
         .show_x(false)    // Hide default X-axis line & tick numbers
@@ -77,7 +78,6 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
         .allow_drag([false, false])   // Prevent canvas drag drift out of bounds
         .allow_scroll(false)
         .label_formatter(|_, _| String::new()) // Suppress default built-in plot hover line text
-
 
         .show(ui, |plot_ui| {
             // Detect hovered bar index in plot space only when pointer is actively hovering over the plot canvas
@@ -230,7 +230,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                 .inner_margin(8.0_f32)
                                 .show(ui, |ui| {
                                     ui.label(
-                                        egui::RichText::new(format!("📊 Gap {gap}"))
+                                        egui::RichText::new(format!("📊 {}-Step Gap (Δ_{}) = {gap}", state.k, state.k))
                                             .strong()
                                             .size(16.0)
                                             .color(accent),
@@ -296,11 +296,7 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                                 let color = viridis_color(t);
                                 let y0 = bar_rect.min.y + i as f32 * step_h;
                                 let y1 = (y0 + step_h + 0.5).min(bar_rect.max.y);
-                                let sub_rect = egui::Rect::from_min_max(
-                                    egui::pos2(bar_rect.min.x, y0),
-                                    egui::pos2(bar_rect.max.x, y1),
-                                );
-                                painter.rect_filled(sub_rect, 0.0, color);
+                                sub_rect_painter(painter, bar_rect.min.x, y0, bar_rect.max.x, y1, color);
                             }
 
                             // Outline around the vertical gradient bar
@@ -342,7 +338,8 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                             }
 
                             response.on_hover_text(format!(
-                                "Vertical Count Heatmap Meter (Viridis)\nHigh (Top): {}\nLow (Bottom): {}",
+                                "Vertical Count Heatmap Meter (Viridis)\nStep Size: k = {}\nHigh (Top): {}\nLow (Bottom): {}",
+                                state.k,
                                 format_thousands(max_cnt),
                                 format_thousands(min_cnt)
                             ));
@@ -350,4 +347,12 @@ pub fn render(ui: &mut egui::Ui, state: &AppState) {
                     });
             });
     }
+}
+
+fn sub_rect_painter(painter: &egui::Painter, x0: f32, y0: f32, x1: f32, y1: f32, color: egui::Color32) {
+    let sub_rect = egui::Rect::from_min_max(
+        egui::pos2(x0, y0),
+        egui::pos2(x1, y1),
+    );
+    painter.rect_filled(sub_rect, 0.0, color);
 }

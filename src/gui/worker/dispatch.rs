@@ -97,9 +97,10 @@ pub fn run_compute_with_cache(
     let start_time = std::time::Instant::now();
     let mut counts = vec![0u64; HIST_SIZE];
 
+    let total_elements = max_val.saturating_sub(min_val).saturating_add(1);
     res_tx
         .send(WorkerResult::Metadata(DatasetMetadata {
-            total_rows: max_val,
+            total_rows: total_elements,
             unique_gaps: 0,
             min_gap: 0,
             max_gap: 0,
@@ -168,7 +169,7 @@ pub fn run_compute_with_cache(
 
     res_tx
         .send(WorkerResult::Metadata(DatasetMetadata {
-            total_rows: max_val,
+            total_rows: total_elements,
             unique_gaps: unique_gaps_count,
             min_gap: min_gap_val,
             max_gap: max_gap_val,
@@ -203,11 +204,12 @@ pub fn run_precache_animation(
     let range = max_val.saturating_sub(min_val);
     let step_size = (range / total_frames as u64).max(1);
 
-    let sieve_high = nth_prime_upper_bound(max_val) as usize;
+    let target_prime_count = max_val.saturating_add(k as u64);
+    let sieve_high = nth_prime_upper_bound(target_prime_count) as usize;
     let sqrt_limit = (sieve_high as f64).sqrt() as usize;
     let base_primes = small_primes(sqrt_limit.max(2));
 
-    let block_size = if max_val >= LARGE_RANGE_THRESHOLD {
+    let block_size = if target_prime_count >= LARGE_RANGE_THRESHOLD {
         LARGE_BLOCK_SIZE
     } else {
         SMALL_BLOCK_SIZE
@@ -245,7 +247,7 @@ pub fn run_precache_animation(
 
         for p in block {
             prime_idx += 1;
-            if prime_idx > max_val + (k as u64) {
+            if prime_idx > target_prime_count {
                 break;
             }
 
@@ -259,7 +261,7 @@ pub fn run_precache_animation(
                 let tail = (head + ring_capacity - (k + 1)) % ring_capacity;
                 let (idx_start, p_start) = ring_buf[tail];
 
-                if idx_start >= min_val && prime_idx <= max_val {
+                if idx_start >= min_val && idx_start <= max_val {
                     let chunk_idx = ((idx_start - min_val) / step_size) as usize;
                     let target_frame = chunk_idx.min(total_frames - 1);
                     let deltak = (p - p_start) as usize;
@@ -269,7 +271,7 @@ pub fn run_precache_animation(
                 }
             }
         }
-        if prime_idx > max_val + (k as u64) {
+        if prime_idx > target_prime_count {
             break;
         }
     }
@@ -313,9 +315,10 @@ pub fn run_precache_animation(
         }))
         .ok();
 
+    let total_elements = max_val.saturating_sub(min_val).saturating_add(1);
     res_tx
         .send(WorkerResult::Metadata(DatasetMetadata {
-            total_rows: max_val,
+            total_rows: total_elements,
             unique_gaps: unique_gaps_count,
             min_gap: min_gap_val,
             max_gap: max_gap_val,

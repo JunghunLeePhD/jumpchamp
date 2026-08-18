@@ -36,8 +36,18 @@ fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
         .on_hover_text("Step distance parameter k for prime gaps (Δ_k(n) = p_{n+k} - p_n).\nChanging k modifies the underlying mathematical gap distribution.");
     if resp.changed() {
         state.k = state.k.max(1);
-        if state.view_mode == ViewMode::Static && !state.freq_data.is_empty() {
-            action = SidebarAction::Compute;
+        state.anim_precomputed = None;
+        match state.view_mode {
+            ViewMode::Static => {
+                action = SidebarAction::Compute;
+            }
+            ViewMode::Animation => {
+                if state.is_animating {
+                    action = SidebarAction::StartAnimation;
+                } else {
+                    action = SidebarAction::StepAnimation;
+                }
+            }
         }
     }
     ui.separator();

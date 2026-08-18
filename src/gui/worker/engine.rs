@@ -53,11 +53,12 @@ pub fn sieve_and_cache(
     ctx: &egui::Context,
     cancel_flag: &AtomicBool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let sieve_high = nth_prime_upper_bound(max_val) as usize;
+    let target_prime_count = max_val.saturating_add(k as u64);
+    let sieve_high = nth_prime_upper_bound(target_prime_count) as usize;
     let sqrt_limit = (sieve_high as f64).sqrt() as usize;
     let base_primes = small_primes(sqrt_limit.max(2));
 
-    let block_size = if max_val >= LARGE_RANGE_THRESHOLD {
+    let block_size = if target_prime_count >= LARGE_RANGE_THRESHOLD {
         LARGE_BLOCK_SIZE
     } else {
         SMALL_BLOCK_SIZE
@@ -96,7 +97,7 @@ pub fn sieve_and_cache(
 
         for p in block {
             prime_idx += 1;
-            if prime_idx > max_val + (k as u64) {
+            if prime_idx > target_prime_count {
                 break;
             }
 
@@ -117,16 +118,16 @@ pub fn sieve_and_cache(
                     current_chunk_idx = p_chunk;
                 }
 
-                if idx_start >= min_val && prime_idx <= max_val {
-                    let deltak = (p - p_start) as usize;
-                    if deltak < HIST_SIZE {
+                let deltak = (p - p_start) as usize;
+                if deltak < HIST_SIZE {
+                    chunk_hist[deltak] += 1;
+                    if idx_start >= min_val && idx_start <= max_val {
                         counts[deltak] += 1;
-                        chunk_hist[deltak] += 1;
                     }
                 }
             }
         }
-        if prime_idx > max_val + (k as u64) {
+        if prime_idx > target_prime_count {
             break;
         }
     }
