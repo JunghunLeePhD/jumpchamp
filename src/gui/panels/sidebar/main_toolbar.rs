@@ -53,10 +53,10 @@ fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
     ui.label("k:");
     let resp = ui
-        .add(egui::DragValue::new(&mut state.k).range(1..=100))
+        .add(egui::DragValue::new(&mut state.k).range(1..=1000))
         .on_hover_text("Step distance parameter k for prime gaps (Δ_k(n) = p_{n+k} - p_n).\nChanging k modifies the underlying mathematical gap distribution.");
     if resp.changed() {
-        state.k = state.k.max(1);
+        state.k = state.k.clamp(1, 1000);
         state.anim_precomputed = None;
         match state.view_mode {
             ViewMode::Static => {
