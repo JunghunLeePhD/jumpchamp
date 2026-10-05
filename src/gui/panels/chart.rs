@@ -7,6 +7,31 @@ use crate::gui::state::AppState;
 use crate::gui::theme::{self, viridis_color};
 use crate::gui::utils::{format_compact_num, format_thousands};
 
+/// Finds the top 5 gap indices by frequency count in a single O(N) pass with zero heap allocations.
+/// Returns an array of `(bar_index, count)` sorted in descending order of count.
+#[inline]
+pub fn find_top5_indices(display_data: &[(u64, u64)]) -> [(usize, u64); 5] {
+    let mut top5 = [(0usize, 0u64); 5];
+    for (i, &(_, count)) in display_data.iter().enumerate() {
+        if count > top5[4].1 {
+            let mut pos = 4;
+            while pos > 0 && count > top5[pos - 1].1 {
+                top5[pos] = top5[pos - 1];
+                pos -= 1;
+            }
+            top5[pos] = (i, count);
+        }
+    }
+    top5
+}
+
+/// Checks whether a bar index belongs to the top 5 gaps with non-zero count.
+#[inline]
+pub fn is_top5(top5: &[(usize, u64); 5], data_len: usize, idx: usize) -> bool {
+    let valid_len = data_len.min(5);
+    top5[..valid_len].iter().any(|&(top_idx, count)| count > 0 && top_idx == idx)
+}
+
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
     let is_dark = theme::is_dark(state.theme_mode);
     let accent = theme::accent_color(is_dark);
@@ -110,28 +135,11 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             }
 
-            // Single O(N) pass to find top 3 gaps with zero heap allocations
-            let mut top3: [(usize, u64); 3] = [(0, 0), (0, 0), (0, 0)];
-            for (i, &(_, count)) in display_data.iter().enumerate() {
-                if count > top3[0].1 {
-                    top3[2] = top3[1];
-                    top3[1] = top3[0];
-                    top3[0] = (i, count);
-                } else if count > top3[1].1 {
-                    top3[2] = top3[1];
-                    top3[1] = (i, count);
-                } else if count > top3[2].1 {
-                    top3[2] = (i, count);
-                }
-            }
-            let is_top3_fn = |idx: usize| {
-                (!display_data.is_empty() && top3[0].0 == idx && top3[0].1 > 0)
-                    || (display_data.len() > 1 && top3[1].0 == idx && top3[1].1 > 0)
-                    || (display_data.len() > 2 && top3[2].0 == idx && top3[2].1 > 0)
-            };
+            // Single O(N) pass to find top 5 gaps with zero heap allocations
+            let top5 = find_top5_indices(display_data);
 
             let mut all_texts = Vec::with_capacity(display_data.len() * 2);
-            let mut top3_texts = Vec::with_capacity(6);
+            let mut top5_texts = Vec::with_capacity(10);
 
             let bars: Vec<Bar> = display_data
                 .iter()
@@ -142,7 +150,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                     let intensity = count as f64 / max_count;
                     let is_hovered = hovered_idx == Some(i as i32);
                     let is_selected = new_selected_gap == Some(gap);
-                    let is_top3 = is_top3_fn(i);
+                    let is_top5 = is_top5(&top5, display_data.len(), i);
 
                     if is_hovered {
                         hovered_item = Some((i, gap, count));
@@ -186,8 +194,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                         )
                         .color(text_color);
 
-                        if is_top3 {
-                            top3_texts.push(pct_text.clone());
+                        if is_top5 {
+                            top5_texts.push(pct_text.clone());
                         }
                         all_texts.push(pct_text);
                     }
@@ -207,8 +215,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                     )
                     .color(gap_color);
 
-                    if is_top3 || is_selected {
-                        top3_texts.push(gap_text.clone());
+                    if is_top5 || is_selected {
+                        top5_texts.push(gap_text.clone());
                     }
                     all_texts.push(gap_text);
 
@@ -252,7 +260,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                     plot_ui.text(txt);
                 }
             } else {
-                for txt in top3_texts {
+                for txt in top5_texts {
                     plot_ui.text(txt);
                 }
             }
@@ -468,4 +476,108 @@ fn sub_rect_painter(painter: &egui::Painter, x0: f32, y0: f32, x1: f32, y1: f32,
         egui::pos2(x1, y1),
     );
     painter.rect_filled(sub_rect, 0.0, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_top5_empty() {
+        let data: Vec<(u64, u64)> = vec![];
+        let top5 = find_top5_indices(&data);
+        assert_eq!(top5, [(0, 0); 5]);
+        assert!(!is_top5(&top5, data.len(), 0));
+    }
+
+    #[test]
+    fn test_find_top5_fewer_than_5() {
+        let data = vec![(2, 100), (4, 300), (6, 200)];
+        let top5 = find_top5_indices(&data);
+        assert_eq!(top5[0], (1, 300));
+        assert_eq!(top5[1], (2, 200));
+        assert_eq!(top5[2], (0, 100));
+        assert_eq!(top5[3], (0, 0));
+        assert_eq!(top5[4], (0, 0));
+
+        assert!(is_top5(&top5, data.len(), 0));
+        assert!(is_top5(&top5, data.len(), 1));
+        assert!(is_top5(&top5, data.len(), 2));
+        assert!(!is_top5(&top5, data.len(), 3));
+    }
+
+    #[test]
+    fn test_find_top5_exact_5() {
+        let data = vec![(2, 10), (4, 50), (6, 30), (8, 20), (10, 40)];
+        let top5 = find_top5_indices(&data);
+        assert_eq!(top5[0], (1, 50));
+        assert_eq!(top5[1], (4, 40));
+        assert_eq!(top5[2], (2, 30));
+        assert_eq!(top5[3], (3, 20));
+        assert_eq!(top5[4], (0, 10));
+
+        for i in 0..5 {
+            assert!(is_top5(&top5, data.len(), i));
+        }
+        assert!(!is_top5(&top5, data.len(), 5));
+    }
+
+    #[test]
+    fn test_find_top5_more_than_5() {
+        let data = vec![
+            (2, 10),   // idx 0
+            (4, 500),  // idx 1 - rank 1
+            (6, 400),  // idx 2 - rank 2
+            (8, 20),   // idx 3
+            (10, 300), // idx 4 - rank 3
+            (12, 200), // idx 5 - rank 4
+            (14, 5),   // idx 6
+            (16, 100), // idx 7 - rank 5
+            (18, 50),  // idx 8
+        ];
+        let top5 = find_top5_indices(&data);
+        assert_eq!(top5[0], (1, 500));
+        assert_eq!(top5[1], (2, 400));
+        assert_eq!(top5[2], (4, 300));
+        assert_eq!(top5[3], (5, 200));
+        assert_eq!(top5[4], (7, 100));
+
+        // The top 5 indices (1, 2, 4, 5, 7) should be true
+        assert!(is_top5(&top5, data.len(), 1));
+        assert!(is_top5(&top5, data.len(), 2));
+        assert!(is_top5(&top5, data.len(), 4));
+        assert!(is_top5(&top5, data.len(), 5));
+        assert!(is_top5(&top5, data.len(), 7));
+
+        // Non-top-5 indices should be false
+        assert!(!is_top5(&top5, data.len(), 0));
+        assert!(!is_top5(&top5, data.len(), 3));
+        assert!(!is_top5(&top5, data.len(), 6));
+        assert!(!is_top5(&top5, data.len(), 8));
+    }
+
+    #[test]
+    fn test_find_top5_zeros() {
+        let data = vec![(2, 0), (4, 0), (6, 0)];
+        let top5 = find_top5_indices(&data);
+        assert_eq!(top5, [(0, 0); 5]);
+        for i in 0..3 {
+            assert!(!is_top5(&top5, data.len(), i));
+        }
+    }
+
+    #[test]
+    fn test_find_top5_ties() {
+        let data = vec![(2, 100), (4, 100), (6, 100), (8, 100), (10, 100), (12, 50)];
+        let top5 = find_top5_indices(&data);
+        for item in &top5 {
+            assert_eq!(item.1, 100);
+        }
+        assert!(is_top5(&top5, data.len(), 0));
+        assert!(is_top5(&top5, data.len(), 1));
+        assert!(is_top5(&top5, data.len(), 2));
+        assert!(is_top5(&top5, data.len(), 3));
+        assert!(is_top5(&top5, data.len(), 4));
+        assert!(!is_top5(&top5, data.len(), 5));
+    }
 }
