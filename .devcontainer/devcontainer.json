@@ -17,9 +17,11 @@
     "vscode": {
       "extensions": [
         "rust-lang.rust-analyzer",
-        "vadimcn.vscode-lldb",
         "ms-python.python"
-      ]
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "check"
+      }
     }
   },
   "postCreateCommand": "pip install -r requirements.txt"
