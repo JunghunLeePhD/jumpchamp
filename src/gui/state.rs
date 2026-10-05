@@ -102,6 +102,7 @@ pub struct AppState {
     pub show_grid_lines: bool,
     pub show_pct_labels: bool,
     pub show_heatmap_meter: bool,
+    pub show_bar_tooltip: bool,
 
     // Animation Controls (Cumulative Linear Growth)
     pub is_animating: bool,
@@ -154,6 +155,7 @@ impl AppState {
             show_grid_lines: true,
             show_pct_labels: true,
             show_heatmap_meter: true,
+            show_bar_tooltip: true,
 
             is_animating: false,
             is_precaching: false,
@@ -322,6 +324,23 @@ mod tests {
         // Reset preserves user theme preference
         state.reset();
         assert_eq!(state.theme_mode, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn test_app_state_show_bar_tooltip_default_and_toggle() {
+        let (cmd_tx, _) = crossbeam_channel::unbounded();
+        let (_, res_rx) = crossbeam_channel::unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+
+        // Default should be true
+        assert!(state.show_bar_tooltip);
+
+        // Can toggle off and on
+        state.show_bar_tooltip = false;
+        assert!(!state.show_bar_tooltip);
+
+        state.show_bar_tooltip = true;
+        assert!(state.show_bar_tooltip);
     }
 }
 

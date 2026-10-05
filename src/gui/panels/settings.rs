@@ -21,7 +21,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
         .resizable(false)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .fixed_size(egui::vec2(420.0, 320.0))
+        .fixed_size(egui::vec2(420.0, 345.0))
         .show(ctx, |ui| {
             ui.add_space(4.0);
 
@@ -90,6 +90,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
                 ui.checkbox(&mut state.show_pct_labels, "Show Percentage Annotations on Bars");
                 ui.checkbox(&mut state.show_grid_lines, "Show Reference Grid Lines");
                 ui.checkbox(&mut state.show_heatmap_meter, "Show Heat Map Count Meter (Top-Right)");
+                ui.checkbox(&mut state.show_bar_tooltip, "Show Cursor Hover Details Tooltip");
             });
         });
 

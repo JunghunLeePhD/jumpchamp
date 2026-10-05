@@ -266,8 +266,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
             }
 
             // Transient Hover Tooltip Card (Shown when hovering over a different, non-pinned bar)
-            if let Some((_, gap, count)) = hovered_item {
-                if new_selected_gap != Some(gap) {
+            if state.show_bar_tooltip {
+                if let Some((_, gap, count)) = hovered_item {
+                    if new_selected_gap != Some(gap) {
                     let prob = count as f64 / total_f64;
                     let pct = prob * 100.0;
 
@@ -330,6 +331,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                     );
                 }
             }
+        }
         });
 
     state.selected_gap = new_selected_gap;
