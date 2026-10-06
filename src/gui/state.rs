@@ -66,9 +66,10 @@ pub enum WorkerResult {
     Error(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
     Static,
+    #[default]
     Animation,
 }
 
@@ -136,7 +137,7 @@ impl AppState {
         let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
         Self {
-            view_mode: ViewMode::Static,
+            view_mode: ViewMode::Animation,
 
             k: 2,
             min_val: min_v,
@@ -184,7 +185,7 @@ impl AppState {
         let max_v = 1_000_000u64;
         let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
-        self.view_mode = ViewMode::Static;
+        self.view_mode = ViewMode::Animation;
         self.k = 2;
         self.min_val = min_v;
         self.max_val = max_v;
@@ -286,5 +287,52 @@ impl AppState {
         if mode == ViewMode::Animation {
             self.recalculate_anim_step();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossbeam_channel::unbounded;
+
+    #[test]
+    fn test_view_mode_default_is_animation() {
+        assert_eq!(ViewMode::default(), ViewMode::Animation);
+    }
+
+    #[test]
+    fn test_app_state_initializes_in_animation_mode() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let state = AppState::new(cmd_tx, res_rx);
+        assert_eq!(state.view_mode, ViewMode::Animation);
+        assert!(!state.is_animating, "Should initialize in standby mode without auto-playing");
+        assert_eq!(state.anim_current_val, state.min_val);
+    }
+
+    #[test]
+    fn test_app_state_reset_restores_animation_mode() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+        state.set_view_mode(ViewMode::Static);
+        assert_eq!(state.view_mode, ViewMode::Static);
+
+        state.reset();
+        assert_eq!(state.view_mode, ViewMode::Animation);
+    }
+
+    #[test]
+    fn test_set_view_mode_transitions() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+
+        state.set_view_mode(ViewMode::Static);
+        assert_eq!(state.view_mode, ViewMode::Static);
+
+        state.set_view_mode(ViewMode::Animation);
+        assert_eq!(state.view_mode, ViewMode::Animation);
+        assert!(state.anim_step_size > 0);
     }
 }
