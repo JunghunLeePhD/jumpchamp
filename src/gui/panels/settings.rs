@@ -30,9 +30,9 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
                 ui.label(egui::RichText::new("Theme Mode").strong().color(accent));
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.radio_value(&mut state.theme_mode, ThemeMode::Dark, "Dark Mode");
-                    ui.add_space(12.0);
                     ui.radio_value(&mut state.theme_mode, ThemeMode::Light, "Light Mode");
+                    ui.add_space(12.0);
+                    ui.radio_value(&mut state.theme_mode, ThemeMode::Dark, "Dark Mode");
                 });
             });
 
