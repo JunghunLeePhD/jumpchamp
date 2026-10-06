@@ -194,6 +194,22 @@ cargo run --release -- 2 1 1000000 --force
 
 ### **4. Native Desktop GUI (`jumpchamp_gui`)**
 
+#### **🍏 macOS Installation via Homebrew (Recommended)**
+
+Install the standalone desktop app with a single command:
+
+```bash
+brew install --cask JunghunLeePhD/tap/jumpchamp
+```
+
+> [!TIP]
+> JumpChamp is open-source and not signed with an Apple Developer certificate. If macOS Gatekeeper blocks opening on first launch, run:
+> ```bash
+> xattr -cr /Applications/JumpChamp.app
+> ```
+
+#### **Run from Source**
+
 Launch the native `egui` desktop GUI application for GPU-accelerated interactive histogram & scatter charts, zero-lag virtualized data tables, and live file loading:
 
 ```bash

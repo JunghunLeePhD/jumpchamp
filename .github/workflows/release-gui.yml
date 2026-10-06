@@ -116,6 +116,11 @@ jobs:
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+      - name: Compute Artifact Checksums
+        run: |
+          echo "=== Release Artifact Checksums ==="
+          sha256sum release-artifacts/*/*
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2.1.0
         with:
@@ -126,7 +131,14 @@ jobs:
 
             Pre-compiled standalone desktop executables for **JumpChamp Prime Gap Explorer**.
 
-            ### 📦 Downloads:
+            ### 🍺 macOS Installation via Homebrew:
+            ```bash
+            brew install --cask JunghunLeePhD/tap/jumpchamp
+            ```
+
+            ---
+
+            ### 📦 Direct Downloads:
             - **macOS (Apple Silicon M1/M2/M3/M4)**: `JumpChamp-macos-arm64.app.zip` *(Double-clickable .app bundle)*
             - **macOS (Intel x86_64)**: `JumpChamp-macos-intel-x86_64.app.zip` *(Double-clickable .app bundle)*
             - **Windows (64-bit)**: `jumpchamp_gui-windows-x86_64.exe` *(Pre-embedded desktop icon)*
