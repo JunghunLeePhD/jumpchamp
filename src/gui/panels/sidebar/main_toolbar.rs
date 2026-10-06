@@ -8,13 +8,21 @@ use crate::gui::state::{AppState, ViewMode};
 use crate::gui::theme;
 use crate::gui::utils::format_compact_num;
 
-/// Renders the view mode toggle buttons (Static Chart vs Animation View).
+/// Renders the view mode toggle buttons (Animation View vs Static Picture Chart).
 fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
-    if ui.selectable_label(state.view_mode == ViewMode::Static, "📊").clicked() {
-        state.set_view_mode(ViewMode::Static);
-    }
-    if ui.selectable_label(state.view_mode == ViewMode::Animation, "🎬").clicked() {
+    if ui
+        .selectable_label(state.view_mode == ViewMode::Animation, "🎬")
+        .on_hover_text("Animation Mode (Multi-frame cumulative growth)")
+        .clicked()
+    {
         state.set_view_mode(ViewMode::Animation);
+    }
+    if ui
+        .selectable_label(state.view_mode == ViewMode::Static, "📊")
+        .on_hover_text("Picture Mode (Static single-frame chart)")
+        .clicked()
+    {
+        state.set_view_mode(ViewMode::Static);
     }
     ui.separator();
 }
