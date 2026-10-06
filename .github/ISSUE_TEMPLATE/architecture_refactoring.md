@@ -7,12 +7,10 @@ assignees: ""
 ---
 
 ### 📂 Target Layer / Module
-- [ ] Core Engine (`src/lib.rs`, `src/config.rs`)
+- [ ] Core Library (`src/lib.rs`)
 - [ ] Sieve Engine (`src/sieve/`)
-- [ ] Storage Layer (`src/storage/`)
 - [ ] Analysis Layer (`src/analysis/`)
-- [ ] CLI Binaries (`src/bin/`, `src/main.rs`)
-- [ ] Native Desktop GUI (`src/gui/`, `src/bin/jumpchamp_gui.rs`)
+- [ ] Native Desktop GUI (`src/gui/`, `src/main.rs`, `src/bin/jumpchamp_gui.rs`)
 - [ ] CI/CD & Workflows (`.github/`)
 
 ### 🔍 Current Architecture / Pain Point

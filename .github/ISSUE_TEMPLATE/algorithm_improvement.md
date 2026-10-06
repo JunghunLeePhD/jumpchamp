@@ -8,7 +8,7 @@ assignees: ""
 
 ### 🚀 Target Component / Algorithm
 - [ ] Prime Sieve (`src/sieve/`)
-- [ ] Parquet Storage & Compression (`src/storage/`)
+- [ ] Native GUI & Visualizer (`src/gui/`)
 - [ ] Gap Analysis Combinators (`src/analysis/`)
 - [ ] Other
 

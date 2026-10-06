@@ -2,27 +2,7 @@
 // Pure Functional Iterator Combinators for Prime Gap Analysis
 // ============================================================================
 
-use arrow_array::{UInt16Array, UInt64Array};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use std::collections::{BTreeMap, VecDeque};
-
-// ============================================================================
-// Slow path — operates on a raw prime stream from primes.parquet
-// ============================================================================
-
-/// Converts a Parquet reader into a lazy stream of prime numbers (`u64`).
-pub fn stream_primes(reader: ParquetRecordBatchReader) -> impl Iterator<Item = u64> {
-    reader.filter_map(Result::ok).flat_map(|batch| {
-        let col = batch
-            .column(0)
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .expect("Expected UInt64Array")
-            .clone();
-
-        (0..col.len()).map(move |i| col.value(i)).collect::<Vec<_>>().into_iter()
-    })
-}
 
 /// Applies lazy bounds checking on prime values: stops reading when `p > max`, skips `p < min`.
 pub fn apply_interval(
@@ -114,23 +94,6 @@ pub fn gap_transition_matrix(gaps: impl Iterator<Item = u64>) -> BTreeMap<(u64, 
     transitions
 }
 
-// ============================================================================
-// Fast path — operates on single-column (gap: u16) from gaps.parquet
-// ============================================================================
-
-/// Converts a single-column gaps.parquet reader into a lazy stream of 16-bit gap values.
-pub fn stream_gaps(reader: ParquetRecordBatchReader) -> impl Iterator<Item = u16> {
-    reader.filter_map(Result::ok).flat_map(|batch| {
-        let gaps = batch
-            .column(0)
-            .as_any()
-            .downcast_ref::<UInt16Array>()
-            .expect("Expected UInt16Array for gap column")
-            .clone();
-
-        (0..gaps.len()).map(move |i| gaps.value(i)).collect::<Vec<_>>().into_iter()
-    })
-}
 
 /// Applies 1-based index range bounds [min_idx, max_idx] using iterator skip and take.
 pub fn apply_offset_interval(

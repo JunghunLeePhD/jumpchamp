@@ -22,10 +22,6 @@
   color: "e99695"
   description: "Code cleanup and trait/struct refactoring"
 
-- name: "storage"
-  color: "1d76db"
-  description: "Parquet Delta/ZSTD compression and Arrow dataset sinks"
-
 - name: "gui"
   color: "7057ff"
   description: "Native desktop GUI application, egui/eframe visualizer, or charts"
