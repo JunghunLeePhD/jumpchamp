@@ -290,66 +290,55 @@ cargo build --release --bin jumpchamp_gui
 ```
 
 The output binary will appear in `target/release/`:
-- `target/release/jumpchamp_gui.exe` (Windows)
-- `target/release/jumpchamp_gui` (macOS / Linux)
-
-> [!IMPORTANT]
-> **Cross-compiling for other platforms** (e.g. building a macOS binary from Linux inside the Dev Container) requires target-specific SDK toolchains and cross-linkers.
-> **Use GitHub Actions CI instead** — it builds natively on each platform automatically. See below.
+- `target/release/jumpchamp_gui` (macOS native binary)
 
 ---
 
-### **Building Platform-Specific Binaries (On That Native Platform)**
+### **Building macOS Application Bundles Locally**
 
-These commands should be run **on the target platform itself**:
-
-| Platform | Prerequisite | Build Command |
-| :--- | :--- | :--- |
-| **Windows** | Windows OS + Rust installed | `cargo build --release --bin jumpchamp_gui` |
-| **macOS (Apple Silicon)** | macOS arm64 + `rustup target add aarch64-apple-darwin` | `cargo build --release --target aarch64-apple-darwin --bin jumpchamp_gui` |
-| **macOS (Intel)** | macOS x86_64 + `rustup target add x86_64-apple-darwin` | `cargo build --release --target x86_64-apple-darwin --bin jumpchamp_gui` |
-| **Linux** | Linux x86_64 + Rust installed | `cargo build --release --bin jumpchamp_gui` |
-
----
-
-### **🖼️ Setting Application & Desktop Icons**
-
-The app displays its icon in the runtime OS Dock/Taskbar, as well as on Desktop and File Managers:
-
-* **Windows (`.exe` File & Desktop Icon)**:
-  `build.rs` embeds `assets/icon.ico` directly into `jumpchamp_gui.exe` using `winres`. When compiling on Windows (`cargo build --release`), the resulting executable displays the JumpChamp icon on the Desktop and in File Explorer.
-* **Linux (Desktop Launcher & Menu Icon)**:
-  Linux desktop environments (GNOME, KDE, XFCE) read `.desktop` launcher files. Run the included helper script to install the desktop shortcut and high-res icon:
-  ```bash
-  ./install_desktop_shortcut.sh
-  ```
-  This installs `JumpChamp` to your Application Menu and places a launchable shortcut on `~/Desktop`.
-* **macOS (`.app` Bundle Icon)**:
-  macOS uses `.app` bundles configured via `[package.metadata.bundle]` in `Cargo.toml`. Building with `cargo-bundle` automatically packages `JumpChamp.app` with `AppIcon.icns`:
-  ```bash
-  cargo install cargo-bundle
-  cargo bundle --release --bin jumpchamp_gui
-  ```
-
-
-
----
-
-## **🤖 Automated GitHub Actions GUI Releases**
-
-This repository features an automated GitHub Actions CI/CD pipeline ([`.github/workflows/release-gui.yml`](file:///workspace/.github/workflows/release-gui.yml)).
-
-Whenever a version tag is pushed (e.g. `v1.0.0`), GitHub Actions automatically builds standalone executables for **Windows**, **macOS**, and **Linux** and attaches them directly to the GitHub Release page:
+To compile and package the double-clickable `JumpChamp.app` bundle locally on macOS:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+# 1. Install cargo-bundle
+cargo install cargo-bundle
+
+# 2. Package .app bundle
+cargo bundle --release --bin jumpchamp_gui
+
+# 3. Ad-hoc codesign the bundle (required for Apple Silicon)
+codesign --force --deep --sign - target/release/bundle/osx/JumpChamp.app
 ```
 
-### **How Friends Can Download and Run:**
-1. Go to your GitHub Repository **Releases** page.
-2. Download the binary for their OS (`jumpchamp_gui-windows-x86_64.exe`, `jumpchamp_gui-macos-arm64`, or `jumpchamp_gui-linux-x86_64`).
-3. Double-click to play!
+The resulting `JumpChamp.app` will appear in:
+`target/release/bundle/osx/JumpChamp.app`
+
+---
+
+### **🖼️ Application & macOS Dock Icon**
+
+macOS uses `.app` bundles configured via `[package.metadata.bundle]` in `Cargo.toml`. Building with `cargo-bundle` automatically packages `JumpChamp.app` with native icons generated from `assets/`:
+
+```bash
+cargo bundle --release --bin jumpchamp_gui
+```
+
+---
+
+## **🤖 Automated GitHub Actions GUI Releases (macOS)**
+
+This repository features an automated GitHub Actions CI/CD pipeline ([`.github/workflows/release-gui.yml`](file:///workspace/.github/workflows/release-gui.yml)) targeting Apple Silicon and Intel Macs.
+
+Whenever a version tag is pushed (e.g. `v1.0.0`) or dispatched manually:
+1. GitHub Actions spins up native macOS runners for both **Apple Silicon (`aarch64`)** and **Intel (`x86_64`)**.
+2. Packages and ad-hoc signs `JumpChamp.app`.
+3. Attaches `JumpChamp-macos-arm64.app.zip` and `JumpChamp-macos-intel-x86_64.app.zip` directly to the GitHub Release.
+
+### **How to Install on macOS:**
+* **Via Homebrew (Recommended)**:
+  ```bash
+  brew install --cask JunghunLeePhD/tap/jumpchamp
+  ```
+* **Direct Download**: Download the matching `.app.zip` from GitHub Releases, extract to `/Applications`, and launch!
 
 ---
 

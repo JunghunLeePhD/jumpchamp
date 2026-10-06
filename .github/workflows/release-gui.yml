@@ -1,4 +1,4 @@
-name: Build & Release Desktop GUI App
+name: Build & Release Desktop GUI App (macOS)
 
 on:
   push:
@@ -17,41 +17,25 @@ permissions:
 
 jobs:
   build-gui:
-    name: Build GUI App (${{ matrix.os }})
+    name: Build GUI App (${{ matrix.arch_title }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset_name: jumpchamp_gui-windows-x86_64.exe
-            is_macos: false
-
           - os: macos-latest
             target: aarch64-apple-darwin
+            arch_title: "Apple Silicon M-Series"
             asset_name: JumpChamp-macos-arm64.app.zip
-            is_macos: true
 
           - os: macos-15-intel
             target: x86_64-apple-darwin
+            arch_title: "Intel x86_64"
             asset_name: JumpChamp-macos-intel-x86_64.app.zip
-            is_macos: true
-
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset_name: JumpChamp-linux-x86_64.tar.gz
-            is_macos: false
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4.2.2
-
-      - name: Install Linux GUI Dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libspeechd-dev libxkbcommon-dev libwayland-dev
 
       - name: Set up Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -61,30 +45,16 @@ jobs:
       - name: Cache Rust Build Artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-bundle (macOS)
-        if: matrix.is_macos == true
+      - name: Install cargo-bundle
         run: cargo install cargo-bundle
 
-      - name: Build & Package GUI App
+      - name: Build, Sign & Package macOS App
         run: |
-          if [ "${{ matrix.is_macos }}" = "true" ]; then
-            cargo bundle --release --target ${{ matrix.target }} --bin jumpchamp_gui
-            codesign --force --deep --sign - target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
-            codesign -dvv target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
-            cd target/${{ matrix.target }}/release/bundle/osx
-            zip -r ../../../../../${{ matrix.asset_name }} JumpChamp.app
-          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cargo build --release --target ${{ matrix.target }} --bin jumpchamp_gui
-            cp target/${{ matrix.target }}/release/jumpchamp_gui.exe ${{ matrix.asset_name }}
-          else
-            cargo build --release --target ${{ matrix.target }} --bin jumpchamp_gui
-            mkdir -p JumpChamp-linux-x86_64/assets
-            cp target/${{ matrix.target }}/release/jumpchamp_gui JumpChamp-linux-x86_64/
-            cp install_desktop_shortcut.sh JumpChamp-linux-x86_64/
-            cp assets/jumpchamp.desktop JumpChamp-linux-x86_64/assets/
-            cp assets/512x512.png JumpChamp-linux-x86_64/assets/
-            tar -czvf ${{ matrix.asset_name }} JumpChamp-linux-x86_64
-          fi
+          cargo bundle --release --target ${{ matrix.target }} --bin jumpchamp_gui
+          codesign --force --deep --sign - target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
+          codesign -dvv target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
+          cd target/${{ matrix.target }}/release/bundle/osx
+          zip -r ../../../../../${{ matrix.asset_name }} JumpChamp.app
         shell: bash
 
       - name: Upload Build Artifact
@@ -94,7 +64,7 @@ jobs:
           path: ${{ matrix.asset_name }}
 
   release:
-    name: Publish Release & Attach Binary Executables
+    name: Publish Release & Attach macOS Executables
     needs: build-gui
     runs-on: ubuntu-latest
     steps:
@@ -129,11 +99,11 @@ jobs:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           name: "JumpChamp GUI App Release ${{ steps.release_tag.outputs.tag }}"
           body: |
-            ## 🚀 Native Desktop GUI Executables (${{ steps.release_tag.outputs.tag }})
+            ## 🚀 Native Desktop GUI App for macOS (${{ steps.release_tag.outputs.tag }})
 
             Pre-compiled standalone desktop executables for **JumpChamp Prime Gap Explorer**.
 
-            ### 🍺 macOS Installation via Homebrew:
+            ### 🍺 Install via Homebrew:
             ```bash
             brew install --cask JunghunLeePhD/tap/jumpchamp
             ```
@@ -143,38 +113,15 @@ jobs:
             ### 📦 Direct Downloads:
             - **macOS (Apple Silicon M1/M2/M3/M4)**: `JumpChamp-macos-arm64.app.zip` *(Double-clickable .app bundle)*
             - **macOS (Intel x86_64)**: `JumpChamp-macos-intel-x86_64.app.zip` *(Double-clickable .app bundle)*
-            - **Windows (64-bit)**: `jumpchamp_gui-windows-x86_64.exe` *(Pre-embedded desktop icon)*
-            - **Linux (x86_64)**: `JumpChamp-linux-x86_64.tar.gz` *(Includes desktop shortcut installer)*
 
             ---
 
-            ### 🐧 Linux Installation Instructions:
-            1. Download and extract `JumpChamp-linux-x86_64.tar.gz`:
-               ```bash
-               tar -xzvf JumpChamp-linux-x86_64.tar.gz
-               cd JumpChamp-linux-x86_64
-               ```
-            2. Run the shortcut installer:
-               ```bash
-               ./install_desktop_shortcut.sh
-               ```
-
-            ---
-
-            ### 🍏 macOS First-Time Launch Instructions:
+            ### 🍏 First-Time Launch Instructions:
             1. Download and double-click `JumpChamp-macos-arm64.app.zip` (or Intel version) to unzip.
-            2. **Right-click** (or Control-click) `JumpChamp.app`, select **Open**, and click **Open** on the security popup.
-
-            #### ⚠️ If macOS says "App is damaged and can't be opened" or refuses to launch:
-            Open **Terminal** and run:
-            ```bash
-            sudo xattr -cr /path/to/JumpChamp.app
-            ```
-            *(Tip: Type `sudo xattr -cr ` with a trailing space, drag & drop `JumpChamp.app` into the Terminal window, then press Enter)*.
+            2. Move `JumpChamp.app` to your `/Applications` folder.
+            3. **Right-click** (or Control-click) `JumpChamp.app`, select **Open**, and click **Open** on the security prompt.
           files: release-artifacts/*/*
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
