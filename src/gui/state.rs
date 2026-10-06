@@ -4,9 +4,10 @@
 
 use crossbeam_channel::{Receiver, Sender};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemeMode {
     Dark,
+    #[default]
     Light,
 }
 
@@ -148,7 +149,7 @@ impl AppState {
             selected_gap: None,
 
             show_settings: false,
-            theme_mode: ThemeMode::Dark,
+            theme_mode: ThemeMode::Light,
             max_prime_limit: 10_000_000, // Default 10 Million Primes Limit
             show_grid_lines: true,
             show_pct_labels: true,
@@ -296,43 +297,31 @@ mod tests {
     use crossbeam_channel::unbounded;
 
     #[test]
-    fn test_view_mode_default_is_animation() {
-        assert_eq!(ViewMode::default(), ViewMode::Animation);
+    fn test_theme_mode_default_is_light() {
+        assert_eq!(ThemeMode::default(), ThemeMode::Light);
     }
 
     #[test]
-    fn test_app_state_initializes_in_animation_mode() {
+    fn test_app_state_initializes_in_light_mode() {
         let (cmd_tx, _cmd_rx) = unbounded();
         let (_res_tx, res_rx) = unbounded();
         let state = AppState::new(cmd_tx, res_rx);
-        assert_eq!(state.view_mode, ViewMode::Animation);
-        assert!(!state.is_animating, "Should initialize in standby mode without auto-playing");
-        assert_eq!(state.anim_current_val, state.min_val);
+        assert_eq!(state.theme_mode, ThemeMode::Light);
     }
 
     #[test]
-    fn test_app_state_reset_restores_animation_mode() {
+    fn test_theme_mode_toggle() {
         let (cmd_tx, _cmd_rx) = unbounded();
         let (_res_tx, res_rx) = unbounded();
         let mut state = AppState::new(cmd_tx, res_rx);
-        state.set_view_mode(ViewMode::Static);
-        assert_eq!(state.view_mode, ViewMode::Static);
+        assert_eq!(state.theme_mode, ThemeMode::Light);
 
+        state.theme_mode = ThemeMode::Dark;
+        assert_eq!(state.theme_mode, ThemeMode::Dark);
+
+        // Reset preserves user theme preference
         state.reset();
-        assert_eq!(state.view_mode, ViewMode::Animation);
-    }
-
-    #[test]
-    fn test_set_view_mode_transitions() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
-
-        state.set_view_mode(ViewMode::Static);
-        assert_eq!(state.view_mode, ViewMode::Static);
-
-        state.set_view_mode(ViewMode::Animation);
-        assert_eq!(state.view_mode, ViewMode::Animation);
-        assert!(state.anim_step_size > 0);
+        assert_eq!(state.theme_mode, ThemeMode::Dark);
     }
 }
+
