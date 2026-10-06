@@ -1,4 +1,0 @@
-streamlit
-duckdb
-plotly
-pandas

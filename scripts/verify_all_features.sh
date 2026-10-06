@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # JumpChamp Master Feature Verification Suite
-# Tests every component and feature across Rust and Python subsystems:
+# Tests every component and feature across pure Rust subsystems:
 # 1. Environment & Toolchain Diagnostics
 # 2. Rust Unit Tests (Sieve, Storage, Analytics)
 # 3. Binary Compilations (jumpchamp, build_primes, build_gaps, jumpchamp_gui)
 # 4. Pipeline E2E (primes.parquet, gaps2.parquet, gaps3.parquet generation)
 # 5. CLI Gap Distribution Analyzer (Fast Path & Slow Path)
-# 6. Python Web & DuckDB Engine Tests
-# 7. Streamlit Web Dashboard Headless Health Check
 # ==============================================================================
 
 set -eo pipefail
@@ -49,6 +47,11 @@ print_header() {
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${WORKSPACE_DIR}"
 
+# Ensure cargo is on PATH if installed in ~/.cargo/bin
+if ! command -v cargo >/dev/null 2>&1 && [ -d "$HOME/.cargo/bin" ]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
 print_header "Phase 1: Environment & Toolchain Diagnostics"
 
 ARCH=$(uname -m)
@@ -61,19 +64,6 @@ if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
     pass_step "Rust Toolchain: ${RUST_VER}"
 else
     fail_step "Rust Toolchain" "cargo / rustc not found in PATH"
-fi
-
-if command -v python3 >/dev/null 2>&1; then
-    PY_VER=$(python3 --version)
-    pass_step "Python Environment: ${PY_VER}"
-else
-    fail_step "Python Environment" "python3 not found in PATH"
-fi
-
-if python3 -c "import streamlit, duckdb, plotly, pandas" >/dev/null 2>&1; then
-    pass_step "Python Libraries: streamlit, duckdb, plotly, pandas present"
-else
-    fail_step "Python Libraries" "Failed to import required Python dependencies"
 fi
 
 
@@ -174,50 +164,6 @@ if cargo run --release -- 2 1 50000 primes.parquet --force; then
 else
     fail_step "CLI Analyzer Slow Path" "Execution failed"
 fi
-
-
-print_header "Phase 6: Python Web Pipeline & DuckDB Integration Tests"
-
-if python3 -m unittest discover -s tests -p "test_*.py"; then
-    pass_step "Python Unit & Integration Test Suite"
-else
-    fail_step "Python Unit & Integration Test Suite" "Test assertions failed"
-fi
-
-
-print_header "Phase 7: Streamlit Web Dashboard Headless Smoke Test"
-
-STREAMLIT_PID=""
-cleanup_streamlit() {
-    if [ -n "${STREAMLIT_PID}" ] && kill -0 "${STREAMLIT_PID}" 2>/dev/null; then
-        echo "Stopping headless Streamlit server (PID ${STREAMLIT_PID})..."
-        kill "${STREAMLIT_PID}" 2>/dev/null || true
-        wait "${STREAMLIT_PID}" 2>/dev/null || true
-    fi
-}
-trap cleanup_streamlit EXIT
-
-echo "Starting Streamlit in headless background mode on port 8501..."
-streamlit run app2.py --server.headless true --server.port 8501 --server.enableCORS false --server.enableXsrfProtection false >/tmp/streamlit_smoke.log 2>&1 &
-STREAMLIT_PID=$!
-
-HEALTH_OK=false
-for i in {1..20}; do
-    if curl -sf http://localhost:8501/_stcore/health >/dev/null 2>&1; then
-        HEALTH_OK=true
-        break
-    fi
-    sleep 0.5
-done
-
-if [ "${HEALTH_OK}" = true ]; then
-    pass_step "Streamlit Web Dashboard (HTTP 200 on /_stcore/health)"
-else
-    fail_step "Streamlit Web Dashboard" "Health check did not respond within 10s. Log: $(tail -n 10 /tmp/streamlit_smoke.log)"
-fi
-
-cleanup_streamlit
-STREAMLIT_PID=""
 
 
 print_header "Feature Verification Summary"

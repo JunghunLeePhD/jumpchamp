@@ -67,17 +67,6 @@ jumpchamp/
 │       ├── build_primes.rs      # Prime database builder binary
 │       ├── build_gaps.rs        # Gap database builder binary
 │       └── jumpchamp_gui.rs     # Native desktop GUI entry point binary
-├── jumpchamp_web/               # Streamlit web application package
-│   ├── __init__.py              # Web package root with clean exports
-│   ├── config.py                # Domain configuration types & loaders
-│   ├── ingestion.py             # Resumable Range downloads & URL resolution
-│   ├── database.py              # DuckDB query engine & data processing
-│   ├── components.py            # Streamlit UI components & Plotly charts
-│   └── runner.py                # Main application orchestrator
-├── app.py                       # Streamlit dashboard entry point (defaults to k=2)
-├── app2.py                      # 2-Step Prime Gap Explorer (k=2)
-├── app3.py                      # 3-Step Prime Gap Explorer (k=3)
-├── app_common.py                # Backward-compatible re-export facade
 ├── .gitignore                   # Ignores /target and *.parquet artifacts
 └── Cargo.toml                   # Dependencies (Rayon, Arrow, Parquet, egui, eframe)
 ```
@@ -218,19 +207,7 @@ Key GUI Capabilities:
 - **LTTB Downsampling**: Dynamically reduces $10^7$+ rows down to ~2,000 display points for real-time panning/zooming at 60+ FPS.
 - **Non-blocking Execution**: Background worker channel prevents UI freezes while streaming `.parquet` files.
 
-### **5. Web UI Dashboards (`app2.py` & `app3.py`)**
-
-Dedicated Streamlit dashboards specialized for real-time visualization of 2-step ($\Delta_2$) and 3-step ($\Delta_3$) prime gap distributions. Each application loads its respective single-column Parquet database (`gaps2.parquet` or `gaps3.parquet`) with zero windowing operator overhead and zero subtractions.
-
-```bash
-# Run 2-Step Prime Gap Explorer (k=2)
-streamlit run app2.py
-
-# Run 3-Step Prime Gap Explorer (k=3)
-streamlit run app3.py
-```
-
-### **6. Querying with DuckDB**
+### **5. Querying with DuckDB**
 
 Because the output is standard Parquet, you can run SQL queries directly on `primes.parquet`:
 

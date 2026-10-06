@@ -15,7 +15,7 @@ impl Config {
     pub fn from_args(args: &[String]) -> Self {
         Self {
             limit: args.get(1).and_then(|s| s.parse().ok()).unwrap_or(10_000_000),
-            output_path: default_primes_path().to_string_lossy().into_owned(),
+            output_path: args.get(2).cloned().unwrap_or_else(|| "primes.parquet".into()),
             block_size: 10_000_000,
         }
     }

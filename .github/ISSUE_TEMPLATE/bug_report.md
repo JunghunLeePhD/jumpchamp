@@ -21,4 +21,3 @@ Describe the bug clearly.
 ### 💻 Environment
 - OS:
 - Rust Version (`rustc --version`):
-- Python Version (if Web UI):

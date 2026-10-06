@@ -12,7 +12,7 @@ assignees: ""
 - [ ] Storage Layer (`src/storage/`)
 - [ ] Analysis Layer (`src/analysis/`)
 - [ ] CLI Binaries (`src/bin/`, `src/main.rs`)
-- [ ] Web UI (`app.py`)
+- [ ] Native Desktop GUI (`src/gui/`, `src/bin/jumpchamp_gui.rs`)
 - [ ] CI/CD & Workflows (`.github/`)
 
 ### 🔍 Current Architecture / Pain Point
