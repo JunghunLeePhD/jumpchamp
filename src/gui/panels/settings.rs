@@ -2,7 +2,7 @@
 // Modal Settings Window Component
 // ============================================================================
 
-use crate::gui::state::{AppState, ThemeMode};
+use crate::gui::state::{AppState, ThemeMode, ViewMode};
 use crate::gui::theme;
 use crate::gui::utils::format_compact_num;
 
@@ -21,7 +21,7 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
         .resizable(false)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .fixed_size(egui::vec2(420.0, 290.0))
+        .fixed_size(egui::vec2(420.0, 320.0))
         .show(ctx, |ui| {
             ui.add_space(4.0);
 
@@ -75,6 +75,17 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
                 ui.set_width(ui.available_width());
                 ui.label(egui::RichText::new("Display & Chart Preferences").strong().color(accent));
                 ui.add_space(4.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("View Mode:");
+                    if ui.radio_value(&mut state.view_mode, ViewMode::Animation, "Animation (🎬)").changed() {
+                        state.set_view_mode(state.view_mode);
+                    }
+                    if ui.radio_value(&mut state.view_mode, ViewMode::Static, "Picture / Static (📊)").changed() {
+                        state.set_view_mode(state.view_mode);
+                    }
+                });
+                ui.add_space(2.0);
 
                 ui.checkbox(&mut state.show_pct_labels, "Show Percentage Annotations on Bars");
                 ui.checkbox(&mut state.show_grid_lines, "Show Reference Grid Lines");
