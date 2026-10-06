@@ -155,7 +155,7 @@ impl AppState {
             show_grid_lines: true,
             show_pct_labels: true,
             show_heatmap_meter: true,
-            show_bar_tooltip: true,
+            show_bar_tooltip: false,
 
             is_animating: false,
             is_precaching: false,
@@ -332,15 +332,15 @@ mod tests {
         let (_, res_rx) = crossbeam_channel::unbounded();
         let mut state = AppState::new(cmd_tx, res_rx);
 
-        // Default should be true
-        assert!(state.show_bar_tooltip);
-
-        // Can toggle off and on
-        state.show_bar_tooltip = false;
+        // Default should be false
         assert!(!state.show_bar_tooltip);
 
+        // Can toggle on and off
         state.show_bar_tooltip = true;
         assert!(state.show_bar_tooltip);
+
+        state.show_bar_tooltip = false;
+        assert!(!state.show_bar_tooltip);
     }
 }
 
