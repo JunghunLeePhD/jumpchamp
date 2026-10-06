@@ -38,40 +38,52 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
 
             ui.add_space(6.0);
 
-            ui.group(|ui| {
-                ui.set_width(ui.available_width());
-                ui.label(egui::RichText::new("Global Numerical Limits").strong().color(accent));
-                ui.add_space(4.0);
+            let is_anim_running = state.is_animation_running();
 
-                ui.horizontal(|ui| {
-                    ui.label("Max Prime Index Limit (n):");
-                    let mut limit = state.max_prime_limit;
-                    if ui
-                        .add(egui::DragValue::new(&mut limit).speed(10_000_000).range(1_000_000..=100_000_000_000u64))
-                        .changed()
-                    {
-                        state.set_max_prime_limit(limit);
+            ui.add_enabled_ui(!is_anim_running, |ui| {
+                ui.group(|ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(egui::RichText::new("Global Numerical Limits").strong().color(accent));
+                    if is_anim_running {
+                        ui.label(
+                            egui::RichText::new("🔒 Locked while animation is running")
+                                .small()
+                                .italics()
+                                .color(egui::Color32::from_rgb(220, 150, 0)),
+                        );
                     }
-                    ui.label(format!("({})", format_compact_num(state.max_prime_limit)));
-                });
+                    ui.add_space(4.0);
 
-                ui.horizontal(|ui| {
-                    ui.label("Quick Presets:");
-                    if ui.button("10M").clicked() {
-                        state.set_max_prime_limit(10_000_000);
-                    }
-                    if ui.button("100M").clicked() {
-                        state.set_max_prime_limit(100_000_000);
-                    }
-                    if ui.button("1B").clicked() {
-                        state.set_max_prime_limit(1_000_000_000);
-                    }
-                    if ui.button("10B").clicked() {
-                        state.set_max_prime_limit(10_000_000_000);
-                    }
-                    if ui.button("100B").clicked() {
-                        state.set_max_prime_limit(100_000_000_000);
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label("Max Prime Index Limit (n):");
+                        let mut limit = state.max_prime_limit;
+                        if ui
+                            .add(egui::DragValue::new(&mut limit).speed(10_000_000).range(1_000_000..=100_000_000_000u64))
+                            .changed()
+                        {
+                            state.set_max_prime_limit(limit);
+                        }
+                        ui.label(format!("({})", format_compact_num(state.max_prime_limit)));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Quick Presets:");
+                        if ui.button("10M").clicked() {
+                            state.set_max_prime_limit(10_000_000);
+                        }
+                        if ui.button("100M").clicked() {
+                            state.set_max_prime_limit(100_000_000);
+                        }
+                        if ui.button("1B").clicked() {
+                            state.set_max_prime_limit(1_000_000_000);
+                        }
+                        if ui.button("10B").clicked() {
+                            state.set_max_prime_limit(10_000_000_000);
+                        }
+                        if ui.button("100B").clicked() {
+                            state.set_max_prime_limit(100_000_000_000);
+                        }
+                    });
                 });
             });
 
@@ -82,14 +94,16 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
                 ui.label(egui::RichText::new("Display & Chart Preferences").strong().color(accent));
                 ui.add_space(4.0);
 
-                ui.horizontal(|ui| {
-                    ui.label("View Mode:");
-                    if ui.radio_value(&mut state.view_mode, ViewMode::Animation, "Animation (🎬)").changed() {
-                        state.set_view_mode(state.view_mode);
-                    }
-                    if ui.radio_value(&mut state.view_mode, ViewMode::Static, "Picture / Static (📊)").changed() {
-                        state.set_view_mode(state.view_mode);
-                    }
+                ui.add_enabled_ui(!is_anim_running, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("View Mode:");
+                        if ui.radio_value(&mut state.view_mode, ViewMode::Animation, "Animation (🎬)").changed() {
+                            state.set_view_mode(state.view_mode);
+                        }
+                        if ui.radio_value(&mut state.view_mode, ViewMode::Static, "Picture / Static (📊)").changed() {
+                            state.set_view_mode(state.view_mode);
+                        }
+                    });
                 });
                 ui.add_space(2.0);
 

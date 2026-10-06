@@ -10,18 +10,24 @@ use crate::gui::utils::format_compact_num;
 
 /// Renders the view mode toggle buttons (Animation View vs Static Picture Chart).
 fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
-    if ui
-        .selectable_label(state.view_mode == ViewMode::Animation, "🎬")
-        .on_hover_text("Animation Mode (Multi-frame cumulative growth)")
-        .clicked()
-    {
+    let is_enabled = ui.is_enabled();
+    let anim_resp = ui.selectable_label(state.view_mode == ViewMode::Animation, "🎬");
+    let anim_resp = if is_enabled {
+        anim_resp.on_hover_text("Animation Mode (Multi-frame cumulative growth)")
+    } else {
+        anim_resp.on_hover_text("View mode toggle is locked while animation is running. Pause or stop first.")
+    };
+    if anim_resp.clicked() {
         state.set_view_mode(ViewMode::Animation);
     }
-    if ui
-        .selectable_label(state.view_mode == ViewMode::Static, "📊")
-        .on_hover_text("Picture Mode (Static single-frame chart)")
-        .clicked()
-    {
+
+    let static_resp = ui.selectable_label(state.view_mode == ViewMode::Static, "📊");
+    let static_resp = if is_enabled {
+        static_resp.on_hover_text("Picture Mode (Static single-frame chart)")
+    } else {
+        static_resp.on_hover_text("View mode toggle is locked while animation is running. Pause or stop first.")
+    };
+    if static_resp.clicked() {
         state.set_view_mode(ViewMode::Static);
     }
     ui.separator();
@@ -37,11 +43,13 @@ fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
 /// Renders the reset & clear cache button.
 fn render_reset_button(ui: &mut egui::Ui) -> SidebarAction {
     let mut action = SidebarAction::None;
-    if ui
-        .button("🔄")
-        .on_hover_text("Reset & Clear Cache\nWipes all in-memory precomputations, clears worker segment cache, and restores initial launch state.")
-        .clicked()
-    {
+    let resp = ui.button("🔄");
+    let resp = if ui.is_enabled() {
+        resp.on_hover_text("Reset & Clear Cache\nWipes all in-memory precomputations, clears worker segment cache, and restores initial launch state.")
+    } else {
+        resp.on_hover_text("Reset is disabled while animation is running. Pause or stop animation first.")
+    };
+    if resp.clicked() {
         action = SidebarAction::Reset;
     }
     ui.separator();
@@ -51,10 +59,14 @@ fn render_reset_button(ui: &mut egui::Ui) -> SidebarAction {
 /// Renders the gap order parameter `k` input control.
 fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
+    let is_enabled = ui.is_enabled();
     ui.label("k:");
-    let resp = ui
-        .add(egui::DragValue::new(&mut state.k).range(1..=1000))
-        .on_hover_text("Step distance parameter k for prime gaps (Δ_k(n) = p_{n+k} - p_n).\nChanging k modifies the underlying mathematical gap distribution.");
+    let resp = ui.add(egui::DragValue::new(&mut state.k).range(1..=1000));
+    let resp = if is_enabled {
+        resp.on_hover_text("Step distance parameter k for prime gaps (Δ_k(n) = p_{n+k} - p_n).\nChanging k modifies the underlying mathematical gap distribution.")
+    } else {
+        resp.on_hover_text("Order parameter k is locked while animation is running. Pause or stop first.")
+    };
     if resp.changed() {
         state.k = state.k.clamp(1, 1000);
         state.anim_precomputed = None;
@@ -165,21 +177,40 @@ fn render_compute_action(ui: &mut egui::Ui, state: &AppState) -> SidebarAction {
 pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
     let is_dark = theme::is_dark(state.theme_mode);
+    let is_anim_running = state.is_animation_running();
 
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         render_settings_button(ui, state);
-        let reset_action = render_reset_button(ui);
-        if reset_action != SidebarAction::None {
-            action = reset_action;
+
+        ui.add_enabled_ui(!is_anim_running, |ui| {
+            let reset_action = render_reset_button(ui);
+            if reset_action != SidebarAction::None {
+                action = reset_action;
+            }
+            render_mode_selector(ui, state);
+            let k_action = render_k_selector(ui, state);
+            if k_action != SidebarAction::None {
+                action = k_action;
+            }
+            render_prime_range_section(ui, state, is_dark);
+            render_rank_range_section(ui, state, is_dark);
+        });
+
+        if is_anim_running {
+            let (badge_text, badge_color) = if state.is_precaching {
+                ("⚡ Caching...", egui::Color32::from_rgb(255, 170, 0))
+            } else {
+                ("🎬 Playing...", egui::Color32::from_rgb(0, 180, 220))
+            };
+            ui.label(
+                egui::RichText::new(badge_text)
+                    .small()
+                    .strong()
+                    .color(badge_color),
+            );
         }
-        render_mode_selector(ui, state);
-        let k_action = render_k_selector(ui, state);
-        if k_action != SidebarAction::None {
-            action = k_action;
-        }
-        render_prime_range_section(ui, state, is_dark);
-        render_rank_range_section(ui, state, is_dark);
+
         if state.view_mode == ViewMode::Static {
             let compute_action = render_compute_action(ui, state);
             if compute_action != SidebarAction::None {

@@ -29,6 +29,15 @@ fn render_dual_slider_impl(
         let x_min = track_left + min_x_frac.clamp(0.0, 1.0) * track_width;
         let x_max = track_left + max_x_frac.clamp(0.0, 1.0) * track_width;
 
+        let is_enabled = ui.is_enabled();
+        let effective_fill = if is_enabled {
+            fill_color
+        } else if is_dark {
+            egui::Color32::from_rgb(70, 75, 85)
+        } else {
+            egui::Color32::from_rgb(180, 185, 195)
+        };
+
         // 1. Draw Background Rail (Single Track)
         painter.line_segment(
             [egui::pos2(track_left, track_y), egui::pos2(track_right, track_y)],
@@ -38,11 +47,11 @@ fn render_dual_slider_impl(
         // 2. Draw Active Range Fill Line
         painter.line_segment(
             [egui::pos2(x_min, track_y), egui::pos2(x_max, track_y)],
-            egui::Stroke::new(4.0_f32, fill_color),
+            egui::Stroke::new(4.0_f32, effective_fill),
         );
 
         // 3. Handle Pointer Dragging for Min & Max Thumbs
-        if response.dragged() {
+        if is_enabled && response.dragged() {
             if let Some(pointer_pos) = response.interact_pointer_pos() {
                 let d_min = (pointer_pos.x - x_min).abs();
                 let d_max = (pointer_pos.x - x_max).abs();
@@ -58,12 +67,17 @@ fn render_dual_slider_impl(
         let thumb_r = 6.0_f32;
         let min_circle = egui::pos2(x_min, track_y);
         painter.circle_filled(min_circle, thumb_r, theme::card_bg(is_dark));
-        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, fill_color));
+        painter.circle_stroke(min_circle, thumb_r, egui::Stroke::new(1.5_f32, effective_fill));
 
         // 5. Draw Max Thumb
         let max_circle = egui::pos2(x_max, track_y);
-        painter.circle_filled(max_circle, thumb_r, fill_color);
-        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, theme::text_primary(is_dark)));
+        painter.circle_filled(max_circle, thumb_r, effective_fill);
+        let max_stroke_color = if is_enabled {
+            theme::text_primary(is_dark)
+        } else {
+            effective_fill
+        };
+        painter.circle_stroke(max_circle, thumb_r, egui::Stroke::new(1.5_f32, max_stroke_color));
     }
 
     response.on_hover_text(hover_text)

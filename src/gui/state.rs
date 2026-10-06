@@ -304,6 +304,11 @@ impl AppState {
         self.anim_precomputed = None;
         self.recalculate_dynamic_step();
     }
+
+    /// Returns true if animation playback is actively running or frames are currently being precached.
+    pub fn is_animation_running(&self) -> bool {
+        self.is_animating || self.is_precaching
+    }
 }
 
 #[cfg(test)]
@@ -386,6 +391,29 @@ mod tests {
         assert_eq!(state.max_prime_limit, 100_000_000);
         assert_eq!(state.max_val, 100_000_000);
         assert_eq!(state.anim_step_size, (100_000_000 - 1) / 300);
+    }
+
+    #[test]
+    fn test_is_animation_running_states() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+
+        // Initially idle
+        assert!(!state.is_animation_running());
+
+        // Precaching
+        state.is_precaching = true;
+        assert!(state.is_animation_running());
+
+        // Animating
+        state.is_precaching = false;
+        state.is_animating = true;
+        assert!(state.is_animation_running());
+
+        // Paused or stopped
+        state.is_animating = false;
+        assert!(!state.is_animation_running());
     }
 }
 
