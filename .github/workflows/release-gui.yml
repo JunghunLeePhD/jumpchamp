@@ -69,6 +69,8 @@ jobs:
         run: |
           if [ "${{ matrix.is_macos }}" = "true" ]; then
             cargo bundle --release --target ${{ matrix.target }} --bin jumpchamp_gui
+            codesign --force --deep --sign - target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
+            codesign -dvv target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
             cd target/${{ matrix.target }}/release/bundle/osx
             zip -r ../../../../../${{ matrix.asset_name }} JumpChamp.app
           elif [ "${{ matrix.os }}" = "windows-latest" ]; then
