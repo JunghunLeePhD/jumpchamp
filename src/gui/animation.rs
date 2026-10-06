@@ -4,23 +4,6 @@
 
 use crate::gui::state::{AppState, PlayDirection, WorkerCommand};
 
-/// Dispatches a single compute frame for static or animation playback.
-pub fn dispatch_compute(state: &mut AppState) {
-    state.is_loading = true;
-    state.progress = 0.0;
-    state.error_msg = None;
-
-    let cmd = WorkerCommand::ComputeGaps {
-        min_val: state.min_val,
-        max_val: state.max_val,
-        k: state.k,
-        top_min: state.top_min,
-        top_max: state.top_max,
-        sort_by: state.sort_by.clone(),
-    };
-    state.cmd_tx.send(cmd).ok();
-}
-
 /// Dispatches the animation frame update (precomputed cache or on-demand worker query).
 pub fn dispatch_anim_frame(state: &mut AppState) {
     if !state.update_freq_from_precomputed() {

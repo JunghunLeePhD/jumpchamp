@@ -67,13 +67,6 @@ pub enum WorkerResult {
     Error(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ViewMode {
-    Static,
-    #[default]
-    Animation,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayDirection {
     Forward,
@@ -81,9 +74,6 @@ pub enum PlayDirection {
 }
 
 pub struct AppState {
-    // View Mode
-    pub view_mode: ViewMode,
-
     // Controls
     pub k: usize,
     pub min_val: u64,
@@ -140,8 +130,6 @@ impl AppState {
         let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
         Self {
-            view_mode: ViewMode::Animation,
-
             k: 2,
             min_val: min_v,
             max_val: max_v, // Default: full range [1, Max Prime Index Limit] (n = 1 ~ 10,000,000)
@@ -189,7 +177,6 @@ impl AppState {
         let max_v = self.max_prime_limit;
         let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
-        self.view_mode = ViewMode::Animation;
         self.k = 2;
         self.min_val = min_v;
         self.max_val = max_v;
@@ -284,13 +271,6 @@ impl AppState {
 
     pub fn recalculate_anim_300_frames(&mut self) {
         self.recalculate_anim_step();
-    }
-
-    pub fn set_view_mode(&mut self, mode: ViewMode) {
-        self.view_mode = mode;
-        if mode == ViewMode::Animation {
-            self.recalculate_anim_step();
-        }
     }
 
     /// Sets the maximum prime index limit and updates the active computation range to span [1, limit].
@@ -414,6 +394,24 @@ mod tests {
         // Paused or stopped
         state.is_animating = false;
         assert!(!state.is_animation_running());
+    }
+
+    #[test]
+    fn test_animation_progress_calculation() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+
+        state.min_val = 100;
+        state.max_val = 200;
+        state.anim_current_val = 100;
+        assert!((state.animation_progress() - 0.0).abs() < 1e-5);
+
+        state.anim_current_val = 150;
+        assert!((state.animation_progress() - 0.5).abs() < 1e-5);
+
+        state.anim_current_val = 200;
+        assert!((state.animation_progress() - 1.0).abs() < 1e-5);
     }
 }
 

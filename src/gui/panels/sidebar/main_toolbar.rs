@@ -4,34 +4,9 @@
 
 use super::dual_slider::{render_dual_range_slider, render_dual_top_range_slider};
 use super::SidebarAction;
-use crate::gui::state::{AppState, ViewMode};
+use crate::gui::state::AppState;
 use crate::gui::theme;
 use crate::gui::utils::format_compact_num;
-
-/// Renders the view mode toggle buttons (Animation View vs Static Picture Chart).
-fn render_mode_selector(ui: &mut egui::Ui, state: &mut AppState) {
-    let is_enabled = ui.is_enabled();
-    let anim_resp = ui.selectable_label(state.view_mode == ViewMode::Animation, "🎬");
-    let anim_resp = if is_enabled {
-        anim_resp.on_hover_text("Animation Mode (Multi-frame cumulative growth)")
-    } else {
-        anim_resp.on_hover_text("View mode toggle is locked while animation is running. Pause or stop first.")
-    };
-    if anim_resp.clicked() {
-        state.set_view_mode(ViewMode::Animation);
-    }
-
-    let static_resp = ui.selectable_label(state.view_mode == ViewMode::Static, "📊");
-    let static_resp = if is_enabled {
-        static_resp.on_hover_text("Picture Mode (Static single-frame chart)")
-    } else {
-        static_resp.on_hover_text("View mode toggle is locked while animation is running. Pause or stop first.")
-    };
-    if static_resp.clicked() {
-        state.set_view_mode(ViewMode::Static);
-    }
-    ui.separator();
-}
 
 /// Renders the settings toggle button.
 fn render_settings_button(ui: &mut egui::Ui, state: &mut AppState) {
@@ -70,17 +45,10 @@ fn render_k_selector(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     if resp.changed() {
         state.k = state.k.clamp(1, 1000);
         state.anim_precomputed = None;
-        match state.view_mode {
-            ViewMode::Static => {
-                action = SidebarAction::Compute;
-            }
-            ViewMode::Animation => {
-                if state.is_animating {
-                    action = SidebarAction::StartAnimation;
-                } else {
-                    action = SidebarAction::StepAnimation;
-                }
-            }
+        if state.is_animating {
+            action = SidebarAction::StartAnimation;
+        } else {
+            action = SidebarAction::StepAnimation;
         }
     }
     ui.separator();
@@ -157,22 +125,6 @@ fn render_rank_range_section(ui: &mut egui::Ui, state: &mut AppState, is_dark: b
     ui.separator();
 }
 
-/// Renders the primary action button or progress bar (Compute / Cancel).
-fn render_compute_action(ui: &mut egui::Ui, state: &AppState) -> SidebarAction {
-    if state.is_loading && !state.is_animating {
-        ui.add_sized(
-            [80.0_f32, 18.0_f32],
-            egui::ProgressBar::new(state.progress).show_percentage(),
-        );
-        if ui.button("✖").on_hover_text("Cancel current calculation").clicked() {
-            return SidebarAction::Cancel;
-        }
-    } else if ui.button("▶").on_hover_text("Compute Prime Gap Distribution").clicked() {
-        return SidebarAction::Compute;
-    }
-    SidebarAction::None
-}
-
 /// Renders the top main control toolbar row.
 pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAction {
     let mut action = SidebarAction::None;
@@ -188,7 +140,6 @@ pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
             if reset_action != SidebarAction::None {
                 action = reset_action;
             }
-            render_mode_selector(ui, state);
             let k_action = render_k_selector(ui, state);
             if k_action != SidebarAction::None {
                 action = k_action;
@@ -209,13 +160,6 @@ pub fn render_main_toolbar(ui: &mut egui::Ui, state: &mut AppState) -> SidebarAc
                     .strong()
                     .color(badge_color),
             );
-        }
-
-        if state.view_mode == ViewMode::Static {
-            let compute_action = render_compute_action(ui, state);
-            if compute_action != SidebarAction::None {
-                action = compute_action;
-            }
         }
     });
     ui.add_space(2.0);

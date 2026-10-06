@@ -50,16 +50,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
                     .color(accent),
             );
             ui.add_space(8.0);
-            let prompt = match state.view_mode {
-                crate::gui::state::ViewMode::Animation => {
-                    "Configure your range parameters above and click ▶ Play or ⏭ Step to start animation."
-                }
-                crate::gui::state::ViewMode::Static => {
-                    "Configure your range parameters above and click ▶ Compute to start analysis."
-                }
-            };
             ui.label(
-                egui::RichText::new(prompt)
+                egui::RichText::new("Configure your range parameters above and click ▶ Play or ⏭ Step to start animation.")
                     .size(15.0)
                     .color(text_sec),
             );

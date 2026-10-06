@@ -3,7 +3,7 @@ use eframe::App;
 
 use crate::gui::animation::{
     advance_anim_backward, advance_anim_forward, dispatch_anim_frame, dispatch_cancel,
-    dispatch_compute, dispatch_start_animation, dispatch_step_animation,
+    dispatch_start_animation, dispatch_step_animation,
     dispatch_step_back_animation,
 };
 use crate::gui::panels::{chart, settings, sidebar, sidebar::SidebarAction, status_bar};
@@ -121,7 +121,6 @@ impl App for JumpChampApp {
         egui::TopBottomPanel::top("control_bar")
             .resizable(false)
             .show(ctx, |ui| match sidebar::render(ui, &mut self.state) {
-                SidebarAction::Compute => dispatch_compute(&mut self.state),
                 SidebarAction::Cancel => dispatch_cancel(&mut self.state),
                 SidebarAction::Reset => {
                     self.state.reset();
