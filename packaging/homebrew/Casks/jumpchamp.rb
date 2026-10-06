@@ -17,15 +17,14 @@ cask "jumpchamp" do
 
   app "JumpChamp.app"
 
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-cr", "#{appdir}/JumpChamp.app"]
+  end
+
   zap trash: [
     "~/.jumpchamp",
     "~/Library/Application Support/jumpchamp",
     "~/Library/Preferences/com.jumpchamp.gui.plist",
   ]
-
-  caveats <<~EOS
-    JumpChamp is not signed with an Apple Developer certificate.
-    If macOS prevents the app from opening, run the following in Terminal:
-      xattr -cr /Applications/JumpChamp.app
-  EOS
 end

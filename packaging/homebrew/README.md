@@ -61,12 +61,8 @@ Homebrew will automatically:
 4. Verify the SHA-256 checksum for security.
 5. Extract and place `JumpChamp.app` into `/Applications`.
 
-### ⚠️ First Launch Note (macOS Gatekeeper):
-Because open-source builds without a paid Apple Developer certificate are flagged by macOS Gatekeeper on first launch, if macOS says *"JumpChamp is damaged and can't be opened"*, run:
-```bash
-xattr -cr /Applications/JumpChamp.app
-```
-*(Or Right-Click `JumpChamp.app` in `/Applications` -> click **Open** -> click **Open** on confirmation).*
+### ✨ Automatic Gatekeeper Handling:
+The Cask includes an automated `postflight` hook that runs `xattr -cr /Applications/JumpChamp.app` immediately after extraction. Your friend can launch `JumpChamp` directly from `/Applications` or Spotlight without entering any security bypass commands!
 
 ---
 

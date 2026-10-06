@@ -203,10 +203,7 @@ brew install --cask JunghunLeePhD/tap/jumpchamp
 ```
 
 > [!TIP]
-> JumpChamp is open-source and not signed with an Apple Developer certificate. If macOS Gatekeeper blocks opening on first launch, run:
-> ```bash
-> xattr -cr /Applications/JumpChamp.app
-> ```
+> The Homebrew Cask includes an automated `postflight` hook that removes macOS quarantine flags upon installation, allowing JumpChamp to launch immediately without requiring manual security bypass commands.
 
 #### **Run from Source**
 
