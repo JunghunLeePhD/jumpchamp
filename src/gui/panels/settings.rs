@@ -45,26 +45,32 @@ pub fn render(ctx: &egui::Context, state: &mut AppState) {
 
                 ui.horizontal(|ui| {
                     ui.label("Max Prime Index Limit (n):");
-                    ui.add(egui::DragValue::new(&mut state.max_prime_limit).speed(10_000_000).range(1_000_000..=100_000_000_000u64));
+                    let mut limit = state.max_prime_limit;
+                    if ui
+                        .add(egui::DragValue::new(&mut limit).speed(10_000_000).range(1_000_000..=100_000_000_000u64))
+                        .changed()
+                    {
+                        state.set_max_prime_limit(limit);
+                    }
                     ui.label(format!("({})", format_compact_num(state.max_prime_limit)));
                 });
 
                 ui.horizontal(|ui| {
                     ui.label("Quick Presets:");
                     if ui.button("10M").clicked() {
-                        state.max_prime_limit = 10_000_000;
+                        state.set_max_prime_limit(10_000_000);
                     }
                     if ui.button("100M").clicked() {
-                        state.max_prime_limit = 100_000_000;
+                        state.set_max_prime_limit(100_000_000);
                     }
                     if ui.button("1B").clicked() {
-                        state.max_prime_limit = 1_000_000_000;
+                        state.set_max_prime_limit(1_000_000_000);
                     }
                     if ui.button("10B").clicked() {
-                        state.max_prime_limit = 10_000_000_000;
+                        state.set_max_prime_limit(10_000_000_000);
                     }
                     if ui.button("100B").clicked() {
-                        state.max_prime_limit = 100_000_000_000;
+                        state.set_max_prime_limit(100_000_000_000);
                     }
                 });
             });

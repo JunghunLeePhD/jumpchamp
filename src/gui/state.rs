@@ -134,8 +134,9 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
+        let max_limit = 10_000_000u64;
         let min_v = 1u64;
-        let max_v = 1_000_000u64;
+        let max_v = max_limit;
         let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
         Self {
@@ -143,7 +144,7 @@ impl AppState {
 
             k: 2,
             min_val: min_v,
-            max_val: max_v, // Default 1 Million Primes (n = 1 ~ 1,000,000)
+            max_val: max_v, // Default: full range [1, Max Prime Index Limit] (n = 1 ~ 10,000,000)
             top_min: 1,
             top_max: 20,
             sort_by: SortOrder::ByGapSize, // Default to Gap Mode (Fixed Numerical Order)
@@ -151,7 +152,7 @@ impl AppState {
 
             show_settings: false,
             theme_mode: ThemeMode::Light,
-            max_prime_limit: 10_000_000, // Default 10 Million Primes Limit
+            max_prime_limit: max_limit, // Default 10 Million Primes Limit
             show_grid_lines: true,
             show_pct_labels: true,
             show_heatmap_meter: true,
@@ -185,7 +186,7 @@ impl AppState {
     /// Resets the application state and clears all in-memory precomputations and worker caches back to launch defaults.
     pub fn reset(&mut self) {
         let min_v = 1u64;
-        let max_v = 1_000_000u64;
+        let max_v = self.max_prime_limit;
         let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
 
         self.view_mode = ViewMode::Animation;
@@ -291,6 +292,18 @@ impl AppState {
             self.recalculate_anim_step();
         }
     }
+
+    /// Sets the maximum prime index limit and updates the active computation range to span [1, limit].
+    pub fn set_max_prime_limit(&mut self, new_limit: u64) {
+        let clamped_limit = new_limit.clamp(1_000_000, 100_000_000_000);
+        self.max_prime_limit = clamped_limit;
+        self.max_val = clamped_limit;
+        if self.min_val > self.max_val {
+            self.min_val = 1;
+        }
+        self.anim_precomputed = None;
+        self.recalculate_dynamic_step();
+    }
 }
 
 #[cfg(test)]
@@ -341,6 +354,38 @@ mod tests {
 
         state.show_bar_tooltip = false;
         assert!(!state.show_bar_tooltip);
+    }
+
+    #[test]
+    fn test_default_range_matches_max_prime_limit() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let state = AppState::new(cmd_tx, res_rx);
+        assert_eq!(state.min_val, 1);
+        assert_eq!(state.max_val, state.max_prime_limit);
+        assert_eq!(state.max_val, 10_000_000);
+    }
+
+    #[test]
+    fn test_reset_restores_max_val_to_max_prime_limit() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+        state.max_val = 500_000;
+        state.reset();
+        assert_eq!(state.max_val, state.max_prime_limit);
+        assert_eq!(state.max_val, 10_000_000);
+    }
+
+    #[test]
+    fn test_set_max_prime_limit_updates_range_and_steps() {
+        let (cmd_tx, _cmd_rx) = unbounded();
+        let (_res_tx, res_rx) = unbounded();
+        let mut state = AppState::new(cmd_tx, res_rx);
+        state.set_max_prime_limit(100_000_000);
+        assert_eq!(state.max_prime_limit, 100_000_000);
+        assert_eq!(state.max_val, 100_000_000);
+        assert_eq!(state.anim_step_size, (100_000_000 - 1) / 300);
     }
 }
 
