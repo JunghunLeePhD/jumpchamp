@@ -128,11 +128,20 @@ The project strictly follows Functional Programming (FP) principles:
 
 ### Building macOS Application Bundles Locally
 
-To compile and package the double-clickable `JumpChamp.app` bundle locally on macOS:
+You can package the double-clickable `JumpChamp.app` bundle locally with native icons:
+
+#### Option 1: Automated Script (Recommended)
+Run the automated packaging script (automatically checks prerequisites, installs `cargo-bundle` if missing, packages the app, and signs it):
 
 ```bash
-# 1. Install cargo-bundle
+./scripts/package_macos_app.sh
+```
+
+#### Option 2: Manual Commands
+```bash
+# 1. Install cargo-bundle plugin and ensure ~/.cargo/bin is in your PATH
 cargo install cargo-bundle
+export PATH="$HOME/.cargo/bin:$PATH"
 
 # 2. Package .app bundle
 cargo bundle --release --bin jumpchamp_gui
