@@ -22,7 +22,41 @@ icon = [
     "assets/32x32.png",
     "assets/128x128.png",
     "assets/256x256.png",
-    "assets/512x512.png"
+    "assets/512x512.png",
+    "assets/JumpChamp.icns",
+    "assets/icon.icns"
+]
+version = "0.1.0"
+copyright = "Copyright (c) 2026"
+short_description = "JumpChamp Prime Gap Explorer"
+long_description = "Interactive desktop application for exploring prime gap distributions."
+
+[package.metadata.bundle.bin.jumpchamp]
+name = "JumpChamp"
+identifier = "com.jumpchamp.gui"
+icon = [
+    "assets/32x32.png",
+    "assets/128x128.png",
+    "assets/256x256.png",
+    "assets/512x512.png",
+    "assets/JumpChamp.icns",
+    "assets/icon.icns"
+]
+version = "0.1.0"
+copyright = "Copyright (c) 2026"
+short_description = "JumpChamp Prime Gap Explorer"
+long_description = "Interactive desktop application for exploring prime gap distributions."
+
+[package.metadata.bundle.bin.jumpchamp_gui]
+name = "JumpChamp"
+identifier = "com.jumpchamp.gui"
+icon = [
+    "assets/32x32.png",
+    "assets/128x128.png",
+    "assets/256x256.png",
+    "assets/512x512.png",
+    "assets/JumpChamp.icns",
+    "assets/icon.icns"
 ]
 version = "0.1.0"
 copyright = "Copyright (c) 2026"

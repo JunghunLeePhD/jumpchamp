@@ -92,6 +92,31 @@ else
 fi
 
 
+print_header "Phase 4: Application Bundle & Icon Packaging Verification"
+
+echo "Checking macOS application bundle (.app) and icon assets..."
+if [ -f "assets/JumpChamp.icns" ] && [ -f "assets/icon.icns" ]; then
+    pass_step "Application icon assets: JumpChamp.icns & icon.icns present"
+else
+    fail_step "Application icon assets" "assets/JumpChamp.icns or icon.icns missing"
+fi
+
+if command -v cargo-bundle >/dev/null 2>&1; then
+    echo "Testing cargo-bundle macOS .app generation..."
+    rm -rf target/debug/bundle
+    if unset TERM && cargo bundle --format osx --bin jumpchamp_gui >/dev/null 2>&1; then
+        APP_DIR="target/debug/bundle/osx/JumpChamp.app"
+        if [ -d "${APP_DIR}" ] && [ -f "${APP_DIR}/Contents/Resources/JumpChamp.icns" ] && grep -q "<key>CFBundleIconFile</key>" "${APP_DIR}/Contents/Info.plist"; then
+            pass_step "macOS Application Bundle: JumpChamp.app with JumpChamp.icns and Info.plist icon entry"
+        else
+            fail_step "macOS Application Bundle" "JumpChamp.app or bundle icon missing"
+        fi
+    else
+        fail_step "macOS Application Bundle" "cargo bundle execution failed"
+    fi
+fi
+
+
 print_header "Feature Verification Summary"
 
 echo -e "Total Checks : ${BOLD}${TOTAL_TESTS}${NC}"
