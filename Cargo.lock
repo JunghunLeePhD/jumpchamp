@@ -1633,14 +1633,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "jumpchamp"
+name = "jumpchamp-core"
+version = "1.0.1"
+dependencies = [
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "jumpchamp-gui"
 version = "1.0.1"
 dependencies = [
  "crossbeam-channel",
  "eframe",
  "egui",
  "egui_plot",
- "rayon",
+ "jumpchamp-core",
 ]
 
 [[package]]

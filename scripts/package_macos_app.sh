@@ -29,7 +29,7 @@ if ! command -v cargo-bundle >/dev/null 2>&1; then
 fi
 
 echo " Packaging JumpChamp.app with native icon..."
-cargo bundle --release --format osx --bin jumpchamp_gui
+cargo bundle --release --format osx -p jumpchamp-gui --bin jumpchamp_gui
 
 APP_BUNDLE="target/release/bundle/osx/JumpChamp.app"
 

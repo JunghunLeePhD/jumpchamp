@@ -60,7 +60,7 @@ pub fn run() -> eframe::Result<()> {
         .with_inner_size([1400.0, 900.0])
         .with_min_inner_size([900.0, 600.0]);
 
-    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../assets/128x128.png")) {
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/128x128.png")) {
         viewport = viewport.with_icon(icon);
     }
 

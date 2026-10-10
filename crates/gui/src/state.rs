@@ -1,6 +1,6 @@
 //! Application state: plain data, no channels or threads.
 
-use crate::engine::{frame_step, top_gaps, FrameSet, Progress};
+use jumpchamp_core::engine::{frame_step, top_gaps, FrameSet, Progress};
 
 use super::playback::Playback;
 use super::prefs::{Prefs, MAX_LIMIT, MIN_LIMIT};

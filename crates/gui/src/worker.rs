@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
-use crate::engine::{range_histogram, ChunkCache, FrameSet, Histogram, Progress};
+use jumpchamp_core::engine::{range_histogram, ChunkCache, FrameSet, Histogram, Progress};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(33);
 

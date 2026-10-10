@@ -117,13 +117,36 @@ brew install --cask JunghunLeePhD/tap/jumpchamp
 
 ---
 
-## 🛠️ Architecture & Functional Design
+## 🛠️ Architecture & Multi-Crate Workspace
 
-The project strictly follows Functional Programming (FP) principles:
+JumpChamp is organized as a Cargo multi-crate workspace separating the pure computational engine from the graphical user interface:
 
-- **Pure Functions**: `small_primes` and `sieve_segment` are pure and free of side-effects, making them easily unit-testable without filesystem access.
+```
+├── Cargo.toml                  # Virtual workspace root
+├── crates/
+│   ├── core/                   # jumpchamp-core: Headless prime gap engine (no GUI deps)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── sieve/          # Wheel-of-30, parallel segmented sieve, chunk streaming
+│   │       ├── analysis/       # k-step gaps, transition matrices, residue counts, reports
+│   │       └── engine/         # Histograms, chunk caching, range scans, animation frames
+│   └── gui/                    # jumpchamp-gui: Native desktop application
+│       ├── Cargo.toml
+│       └── src/
+│           ├── actions.rs      # User action reducer and dispatcher
+│           ├── app.rs          # eframe application entry point and lifecycle
+│           ├── panels/         # Toolbar, chart, playback bar, status bar, settings
+│           ├── playback.rs     # Pure animation state machine (forward/reverse/bounce/step)
+│           ├── state.rs        # AppState (Query, Rank, Prefs, Playback)
+│           ├── widgets/        # Range slider, index input, tooltips
+│           └── worker.rs       # Background worker channel with epoch cancellation
+```
+
+### Pure Functional Design Principles:
+- **Zero-UI Core Engine**: `jumpchamp-core` has zero GUI dependencies (`rayon` only), compiles in <1 second, and can be embedded in CLIs, servers, or web services.
+- **Pure Functions**: `small_primes` and `sieve_segment` are pure and free of side-effects, making them testable without external state.
 - **Lazy Evaluation**: `stream_prime_blocks_range` streams blocks lazily, keeping memory bounded regardless of total primes generated.
-- **Decoupled Worker Architecture**: The GUI main thread handles event loop rendering at 60 FPS while the computation worker executes in a separate thread communicating over crossbeam channels.
+- **Decoupled Worker Architecture**: The GUI main thread handles event loop rendering at 60 FPS while the computation worker executes in a separate thread communicating over crossbeam channels with epoch-based cooperative cancellation.
 
 ---
 
@@ -147,7 +170,7 @@ cargo install cargo-bundle
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # 2. Package .app bundle
-cargo bundle --release --bin jumpchamp_gui
+cargo bundle --release -p jumpchamp-gui --bin jumpchamp_gui
 
 # 3. Ad-hoc codesign the bundle (required for Apple Silicon)
 codesign --force --deep --sign - target/release/bundle/osx/JumpChamp.app

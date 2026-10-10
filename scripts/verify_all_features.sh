@@ -68,8 +68,8 @@ fi
 
 print_header "Phase 2: Rust Unit Tests (Sieve, GUI, Analytics)"
 
-if cargo test --all-targets; then
-    pass_step "All Rust Unit Tests (cargo test)"
+if cargo test --workspace --all-targets; then
+    pass_step "All Rust Unit Tests (cargo test --workspace)"
 else
     fail_step "Rust Unit Tests" "cargo test reported test failures"
 fi
@@ -78,14 +78,14 @@ fi
 print_header "Phase 3: Binary Compilation Verification"
 
 echo "Compiling jumpchamp (Default GUI Binary)..."
-if cargo build --release --bin jumpchamp; then
+if cargo build --release -p jumpchamp-gui --bin jumpchamp; then
     pass_step "Binary compilation: jumpchamp (egui native GUI)"
 else
     fail_step "Binary compilation: jumpchamp" "Compilation failed"
 fi
 
 echo "Checking jumpchamp_gui (Application bundle binary)..."
-if cargo check --release --bin jumpchamp_gui; then
+if cargo check --release -p jumpchamp-gui --bin jumpchamp_gui; then
     pass_step "Binary check: jumpchamp_gui"
 else
     fail_step "Binary check: jumpchamp_gui" "Check failed"
@@ -104,7 +104,7 @@ fi
 if command -v cargo-bundle >/dev/null 2>&1; then
     echo "Testing cargo-bundle macOS .app generation..."
     rm -rf target/debug/bundle
-    if unset TERM && cargo bundle --format osx --bin jumpchamp_gui >/dev/null 2>&1; then
+    if unset TERM && cargo bundle --format osx -p jumpchamp-gui --bin jumpchamp_gui >/dev/null 2>&1; then
         APP_DIR="target/debug/bundle/osx/JumpChamp.app"
         if [ -d "${APP_DIR}" ] && [ -f "${APP_DIR}/Contents/Resources/JumpChamp.icns" ] && grep -q "<key>CFBundleIconFile</key>" "${APP_DIR}/Contents/Info.plist"; then
             pass_step "macOS Application Bundle: JumpChamp.app with JumpChamp.icns and Info.plist icon entry"

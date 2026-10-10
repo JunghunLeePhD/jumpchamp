@@ -1,4 +1,4 @@
-//! GUI Domain Root.
+//! JumpChamp GUI — native desktop application for prime gap exploration.
 
 pub mod actions;
 pub mod app;
@@ -10,3 +10,6 @@ pub mod state;
 pub mod theme;
 pub mod widgets;
 pub mod worker;
+
+pub use app::run;
+pub use crate as gui;

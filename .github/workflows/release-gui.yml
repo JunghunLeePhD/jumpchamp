@@ -50,7 +50,7 @@ jobs:
 
       - name: Build, Sign & Package macOS App
         run: |
-          cargo bundle --release --target ${{ matrix.target }} --bin jumpchamp_gui
+          cargo bundle --release --target ${{ matrix.target }} -p jumpchamp-gui --bin jumpchamp_gui
           codesign --force --deep --sign - target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
           codesign -dvv target/${{ matrix.target }}/release/bundle/osx/JumpChamp.app
           cd target/${{ matrix.target }}/release/bundle/osx

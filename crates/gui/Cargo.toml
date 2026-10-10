@@ -1,0 +1,68 @@
+[package]
+name = "jumpchamp-gui"
+version = "1.0.1"
+edition = "2021"
+default-run = "jumpchamp"
+
+[[bin]]
+name = "jumpchamp"
+path = "src/main.rs"
+
+[[bin]]
+name = "jumpchamp_gui"
+path = "src/bin/jumpchamp_gui.rs"
+
+[dependencies]
+jumpchamp-core = { path = "../core" }
+eframe = "0.30"
+egui = "0.30"
+egui_plot = "0.30"
+crossbeam-channel = "0.5"
+
+[package.metadata.bundle]
+name = "JumpChamp"
+identifier = "com.jumpchamp.gui"
+icon = [
+    "assets/32x32.png",
+    "assets/128x128.png",
+    "assets/256x256.png",
+    "assets/512x512.png",
+    "assets/JumpChamp.icns",
+    "assets/icon.icns"
+]
+version = "1.0.1"
+copyright = "Copyright (c) 2026"
+short_description = "JumpChamp Prime Gap Explorer"
+long_description = "Interactive desktop application for exploring prime gap distributions."
+
+[package.metadata.bundle.bin.jumpchamp]
+name = "JumpChamp"
+identifier = "com.jumpchamp.gui"
+icon = [
+    "assets/32x32.png",
+    "assets/128x128.png",
+    "assets/256x256.png",
+    "assets/512x512.png",
+    "assets/JumpChamp.icns",
+    "assets/icon.icns"
+]
+version = "1.0.1"
+copyright = "Copyright (c) 2026"
+short_description = "JumpChamp Prime Gap Explorer"
+long_description = "Interactive desktop application for exploring prime gap distributions."
+
+[package.metadata.bundle.bin.jumpchamp_gui]
+name = "JumpChamp"
+identifier = "com.jumpchamp.gui"
+icon = [
+    "assets/32x32.png",
+    "assets/128x128.png",
+    "assets/256x256.png",
+    "assets/512x512.png",
+    "assets/JumpChamp.icns",
+    "assets/icon.icns"
+]
+version = "1.0.1"
+copyright = "Copyright (c) 2026"
+short_description = "JumpChamp Prime Gap Explorer"
+long_description = "Interactive desktop application for exploring prime gap distributions."
