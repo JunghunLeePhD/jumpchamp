@@ -2,9 +2,9 @@
 
 use egui::{ProgressBar, Ui};
 
-use crate::gui::format::compact;
-use crate::gui::playback::{Direction, Mode};
-use crate::gui::state::AppState;
+use crate::format::compact;
+use crate::playback::{Direction, Mode};
+use crate::state::AppState;
 
 pub fn render(ui: &mut Ui, state: &AppState) {
     ui.horizontal(|ui| {

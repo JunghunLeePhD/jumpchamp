@@ -133,7 +133,7 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::prefs::ThemeMode;
+    use crate::prefs::ThemeMode;
 
     #[test]
     fn test_app_state_initializes_in_light_mode() {

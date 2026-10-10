@@ -2,10 +2,10 @@
 
 use egui::{Context, RichText, Ui};
 
-use crate::gui::format::compact;
-use crate::gui::prefs::{ThemeMode, MAX_LIMIT, MIN_LIMIT};
-use crate::gui::state::AppState;
-use crate::gui::theme::{self, Palette};
+use crate::format::compact;
+use crate::prefs::{ThemeMode, MAX_LIMIT, MIN_LIMIT};
+use crate::state::AppState;
+use crate::theme::{self, Palette};
 
 const LIMIT_PRESETS: [(&str, u64); 5] = [
     ("10M", 10_000_000),

@@ -2,12 +2,12 @@
 
 use egui::{RichText, Ui};
 
-use crate::gui::actions::Action;
-use crate::gui::format::compact;
-use crate::gui::playback::Mode;
-use crate::gui::state::{AppState, MAX_K};
-use crate::gui::theme::{self, Palette};
-use crate::gui::widgets::{hint, index_input, range_slider};
+use crate::actions::Action;
+use crate::format::compact;
+use crate::playback::Mode;
+use crate::state::{AppState, MAX_K};
+use crate::theme::{self, Palette};
+use crate::widgets::{hint, index_input, range_slider};
 
 pub fn render(ui: &mut Ui, state: &mut AppState, palette: &Palette) -> Option<Action> {
     let mut action = None;

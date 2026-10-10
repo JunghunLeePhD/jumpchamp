@@ -1,10 +1,10 @@
 use eframe::App;
 
-use crate::gui::actions;
-use crate::gui::panels::{chart, playback_bar, settings, status_bar, toolbar};
-use crate::gui::state::AppState;
-use crate::gui::theme::{self, Palette};
-use crate::gui::worker::Worker;
+use crate::actions;
+use crate::panels::{chart, playback_bar, settings, status_bar, toolbar};
+use crate::state::AppState;
+use crate::theme::{self, Palette};
+use crate::worker::Worker;
 
 pub struct JumpChampApp {
     pub state: AppState,

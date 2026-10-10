@@ -2,12 +2,12 @@
 
 use egui::{vec2, Button, ProgressBar, RichText, Ui};
 
-use crate::gui::actions::Action;
-use crate::gui::format::compact;
-use crate::gui::playback::{Direction, Mode};
-use crate::gui::state::{AppState, FRAMES};
-use crate::gui::theme;
-use crate::gui::widgets::{hint, index_input};
+use crate::actions::Action;
+use crate::format::compact;
+use crate::playback::{Direction, Mode};
+use crate::state::{AppState, FRAMES};
+use crate::theme;
+use crate::widgets::{hint, index_input};
 
 const BUTTON: egui::Vec2 = vec2(26.0, 20.0);
 const SPEED_PRESETS: [f32; 4] = [15.0, 30.0, 60.0, 120.0];

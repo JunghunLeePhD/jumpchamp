@@ -11,5 +11,4 @@ pub mod theme;
 pub mod widgets;
 pub mod worker;
 
-pub use crate as gui;
 pub use app::run;

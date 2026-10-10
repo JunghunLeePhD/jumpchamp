@@ -2,9 +2,9 @@
 
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
 
-use crate::gui::format::{compact, thousands};
-use crate::gui::state::AppState;
-use crate::gui::theme::{self, Palette};
+use crate::format::{compact, thousands};
+use crate::state::AppState;
+use crate::theme::{self, Palette};
 
 /// Finds the top 5 gap indices by frequency count in a single O(N) pass with zero heap allocations.
 /// Returns an array of `(bar_index, count)` sorted in descending order of count.

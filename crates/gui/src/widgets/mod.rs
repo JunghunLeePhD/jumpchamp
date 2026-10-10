@@ -4,7 +4,7 @@ pub mod range_slider;
 
 pub use range_slider::range_slider;
 
-use crate::gui::format::compact;
+use crate::format::compact;
 
 /// A compact-formatted `DragValue` for prime indices.
 pub fn index_input(

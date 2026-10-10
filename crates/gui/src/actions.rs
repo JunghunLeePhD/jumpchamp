@@ -123,7 +123,7 @@ pub fn tick(state: &mut AppState, worker: &Worker, now: Instant) -> Option<Durat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::state::Query;
+    use crate::state::Query;
 
     fn settle(state: &mut AppState, worker: &Worker, until: impl Fn(&AppState) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(30);

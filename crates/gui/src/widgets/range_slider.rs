@@ -2,7 +2,7 @@
 
 use egui::{pos2, vec2, Color32, Response, Sense, Stroke, Ui};
 
-use crate::gui::theme::Palette;
+use crate::theme::Palette;
 
 const HEIGHT: f32 = 18.0;
 const PAD: f32 = 6.0;
