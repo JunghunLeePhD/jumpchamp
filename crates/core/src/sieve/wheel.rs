@@ -6,9 +6,8 @@
 const OFFSETS: [usize; 8] = [1, 7, 11, 13, 17, 19, 23, 29];
 const NO_BIT: u8 = 255;
 const INDEX: [u8; 30] = [
-    255, 0, 255, 255, 255, 255, 255, 1, 255, 255,
-    255, 2, 255, 3, 255, 255, 255, 4, 255, 5,
-    255, 255, 255, 6, 255, 255, 255, 255, 255, 7,
+    255, 0, 255, 255, 255, 255, 255, 1, 255, 255, 255, 2, 255, 3, 255, 255, 255, 4, 255, 5, 255,
+    255, 255, 6, 255, 255, 255, 255, 255, 7,
 ];
 
 /// Floor of the square root (float-based; exact enough for sieve bounds).
@@ -41,7 +40,11 @@ fn set_bits(words: &[u64]) -> impl Iterator<Item = usize> + '_ {
 /// First odd multiple of `p` that is `>= max(p², from)`.
 fn first_odd_multiple(p: usize, from: usize) -> usize {
     let start = p.saturating_mul(p).max(from).div_ceil(p) * p;
-    if start % 2 == 0 { start + p } else { start }
+    if start.is_multiple_of(2) {
+        start + p
+    } else {
+        start
+    }
 }
 
 /// Sieves `[low, high]` using `base_primes` (all primes up to `√high`).
@@ -78,7 +81,10 @@ pub fn small_primes(limit: usize) -> Vec<usize> {
         return vec![];
     }
     let base = small_primes(isqrt(limit));
-    sieve_segment(1, limit, &base).into_iter().map(|p| p as usize).collect()
+    sieve_segment(1, limit, &base)
+        .into_iter()
+        .map(|p| p as usize)
+        .collect()
 }
 
 #[cfg(test)]
@@ -111,7 +117,12 @@ mod tests {
 
     #[test]
     fn test_small_primes_matches_trial_division() {
-        let is_prime = |n: usize| n >= 2 && (2..).take_while(|d| d * d <= n).all(|d| n % d != 0);
+        let is_prime = |n: usize| {
+            n >= 2
+                && (2..)
+                    .take_while(|d| d * d <= n)
+                    .all(|d| !n.is_multiple_of(d))
+        };
         let expected: Vec<usize> = (0..5000).filter(|&n| is_prime(n)).collect();
         assert_eq!(small_primes(4999), expected);
     }
@@ -121,7 +132,10 @@ mod tests {
         let limit = 10_000;
         let base_primes = small_primes((limit as f64).sqrt() as usize);
         let segment_primes = sieve_segment(1, limit, &base_primes);
-        let expected = small_primes(limit).into_iter().map(|p| p as u64).collect::<Vec<_>>();
+        let expected = small_primes(limit)
+            .into_iter()
+            .map(|p| p as u64)
+            .collect::<Vec<_>>();
 
         assert_eq!(segment_primes, expected);
     }

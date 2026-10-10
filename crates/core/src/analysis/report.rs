@@ -2,17 +2,23 @@
 // Pure Reporting & Formatting
 // ============================================================================
 
-use std::collections::BTreeMap;
 use super::gaps::RecordGap;
+use std::collections::BTreeMap;
 
 /// Formats a gap frequency map as an aligned text report, showing entries between `top_min` and `top_max` rank.
 pub fn format_report(freq_map: &BTreeMap<u64, u64>, top_min: usize, top_max: usize) -> String {
     let total_pairs: u64 = freq_map.values().sum();
-    let mut sorted: Vec<_> = freq_map.iter().map(|(&diff, &count)| (diff, count)).collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut sorted: Vec<_> = freq_map
+        .iter()
+        .map(|(&diff, &count)| (diff, count))
+        .collect();
+    sorted.sort_by_key(|a| std::cmp::Reverse(a.1));
 
     let mut out = String::new();
-    out.push_str(&format!("{:<12} {:<15} {:<12}\n", "Diff", "Frequency", "Percentage"));
+    out.push_str(&format!(
+        "{:<12} {:<15} {:<12}\n",
+        "Diff", "Frequency", "Percentage"
+    ));
     out.push_str(&format!("{}\n", "-".repeat(42)));
 
     let start_idx = (top_min.saturating_sub(1)).min(sorted.len());
@@ -54,7 +60,9 @@ pub fn format_residue_report(residues: &BTreeMap<u64, u64>, modulus: u64) -> Str
     let mut out = String::new();
     out.push_str(&format!(
         "{:<15} {:<15} {:<12}\n",
-        format!("Residue (mod {})", modulus), "Frequency", "Percentage"
+        format!("Residue (mod {})", modulus),
+        "Frequency",
+        "Percentage"
     ));
     out.push_str(&format!("{}\n", "-".repeat(45)));
 
@@ -82,4 +90,3 @@ mod tests {
         assert!(report.contains("Total Analyzed Pairs: 100"));
     }
 }
-

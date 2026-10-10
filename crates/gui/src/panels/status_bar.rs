@@ -13,7 +13,9 @@ pub fn render(ui: &mut Ui, state: &AppState) {
         ui.label(summary(state));
         ui.separator();
 
-        let latency = state.latency_ms.map_or("-- ms".into(), |ms| format!("{ms:.1} ms"));
+        let latency = state
+            .latency_ms
+            .map_or("-- ms".into(), |ms| format!("{ms:.1} ms"));
         ui.label(format!("⚡ Latency: {latency}"));
         ui.separator();
 
@@ -35,7 +37,10 @@ pub fn summary(state: &AppState) -> String {
     match p.mode {
         Mode::Precaching => {
             let (pct, blocks) = match state.progress {
-                Some(pr) => (pr.done * 100 / pr.total, format!(" [Block {}/{}]", pr.done, pr.total)),
+                Some(pr) => (
+                    pr.done * 100 / pr.total,
+                    format!(" [Block {}/{}]", pr.done, pr.total),
+                ),
                 None => (0, String::new()),
             };
             format!("⚡ PRE-CACHING ({pct}%{blocks}): {range} for 0-delay playback...")
@@ -45,11 +50,17 @@ pub fn summary(state: &AppState) -> String {
                 Direction::Forward => "▶ FORWARD",
                 Direction::Reverse => "◀ REVERSE",
             };
-            format!("🎬 ANIMATING ({dir}): {range} (Bound: n = {})", compact(p.position))
+            format!(
+                "🎬 ANIMATING ({dir}): {range} (Bound: n = {})",
+                compact(p.position)
+            )
         }
         Mode::Stopped => {
             let r = &state.rank;
-            format!("📊 Prime Index Range: {range} (k={}, Rank={}~{})", q.k, r.min, r.max)
+            format!(
+                "📊 Prime Index Range: {range} (k={}, Rank={}~{})",
+                q.k, r.min, r.max
+            )
         }
     }
 }

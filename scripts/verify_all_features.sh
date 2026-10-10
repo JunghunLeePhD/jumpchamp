@@ -66,7 +66,25 @@ else
 fi
 
 
-print_header "Phase 2: Rust Unit Tests (Sieve, GUI, Analytics)"
+print_header "Phase 2: Code Style & Formatting (cargo fmt)"
+
+if cargo fmt --check; then
+    pass_step "Rust Code Formatting (cargo fmt --check)"
+else
+    fail_step "Rust Code Formatting" "cargo fmt detected unformatted files"
+fi
+
+
+print_header "Phase 3: Compiler & Linter Diagnostics (cargo clippy)"
+
+if cargo clippy --workspace --all-targets -- -D warnings; then
+    pass_step "Clippy Strict Linter (cargo clippy -D warnings)"
+else
+    fail_step "Clippy Linter" "cargo clippy detected warnings or errors"
+fi
+
+
+print_header "Phase 4: Rust Unit Tests (Sieve, GUI, Analytics)"
 
 if cargo test --workspace --all-targets; then
     pass_step "All Rust Unit Tests (cargo test --workspace)"
@@ -75,7 +93,7 @@ else
 fi
 
 
-print_header "Phase 3: Binary Compilation Verification"
+print_header "Phase 5: Binary Compilation Verification"
 
 echo "Compiling jumpchamp (Default GUI Binary)..."
 if cargo build --release -p jumpchamp-gui --bin jumpchamp; then
@@ -92,7 +110,7 @@ else
 fi
 
 
-print_header "Phase 4: Application Bundle & Icon Packaging Verification"
+print_header "Phase 6: Application Bundle & Icon Packaging Verification"
 
 echo "Checking macOS application bundle (.app) and icon assets..."
 if [ -f "assets/JumpChamp.icns" ] && [ -f "assets/icon.icns" ]; then

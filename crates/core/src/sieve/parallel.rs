@@ -38,7 +38,10 @@ mod tests {
         let base_primes = small_primes(sqrt_limit);
 
         let parallel_primes = sieve_range_parallel(1, limit, &base_primes);
-        let expected = small_primes(limit).into_iter().map(|p| p as u64).collect::<Vec<_>>();
+        let expected = small_primes(limit)
+            .into_iter()
+            .map(|p| p as u64)
+            .collect::<Vec<_>>();
 
         assert_eq!(parallel_primes, expected);
         assert_eq!(parallel_primes.len(), 41538); // pi(500,000) = 41538

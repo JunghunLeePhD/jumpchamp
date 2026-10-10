@@ -47,7 +47,11 @@ pub fn apply(action: Action, state: &mut AppState, worker: &Worker) {
 fn show(state: &mut AppState, worker: &Worker) {
     if !state.show_cached_frame() {
         let q = state.query;
-        worker.run(Job::Histogram { min: q.min, max: state.playback.position.max(q.min), k: q.k });
+        worker.run(Job::Histogram {
+            min: q.min,
+            max: state.playback.position.max(q.min),
+            k: q.k,
+        });
     }
 }
 
@@ -56,13 +60,22 @@ fn play(direction: Direction, state: &mut AppState, worker: &Worker) {
     state.playback.direction = direction;
     state.playback.rewind_if_finished(q.min, q.max);
 
-    if state.frames.as_ref().is_some_and(|f| f.matches(q.min, q.max, q.k)) {
+    if state
+        .frames
+        .as_ref()
+        .is_some_and(|f| f.matches(q.min, q.max, q.k))
+    {
         state.playback.play();
         show(state, worker);
     } else {
         state.playback.mode = Mode::Precaching;
         state.progress = None;
-        worker.run(Job::Frames { min: q.min, max: q.max, k: q.k, count: FRAMES });
+        worker.run(Job::Frames {
+            min: q.min,
+            max: q.max,
+            k: q.k,
+            count: FRAMES,
+        });
     }
 }
 
@@ -122,8 +135,14 @@ mod tests {
     }
 
     fn small_state() -> AppState {
-        let mut state = AppState::default();
-        state.query = Query { k: 1, min: 1, max: 3_000 };
+        let mut state = AppState {
+            query: Query {
+                k: 1,
+                min: 1,
+                max: 3_000,
+            },
+            ..Default::default()
+        };
         state.playback.position = 1;
         state
     }

@@ -43,7 +43,7 @@ pub fn entries(hist: &[u64]) -> impl Iterator<Item = (u64, u64)> + '_ {
 /// The `n` most frequent gaps (ties → smaller gap first), returned in ascending gap order.
 pub fn top_gaps(hist: &[u64], n: usize) -> Vec<(u64, u64)> {
     let mut top: Vec<_> = entries(hist).collect();
-    top.sort_by(|a, b| b.1.cmp(&a.1));
+    top.sort_by_key(|&(g, c)| (std::cmp::Reverse(c), g));
     top.truncate(n);
     top.sort_by_key(|&(g, _)| g);
     top
@@ -89,12 +89,18 @@ mod tests {
         let h = vec![0, 5, 9, 5, 1, 7];
         // Top 3 by count: 9 (gap 2), 7 (gap 5), then the 5-tie resolves to the smaller gap 1.
         assert_eq!(top_gaps(&h, 3), vec![(1, 5), (2, 9), (5, 7)]);
-        assert_eq!(top_gaps(&h, 10), vec![(1, 5), (2, 9), (3, 5), (4, 1), (5, 7)]);
+        assert_eq!(
+            top_gaps(&h, 10),
+            vec![(1, 5), (2, 9), (3, 5), (4, 1), (5, 7)]
+        );
     }
 
     #[test]
     fn test_running_totals() {
         let frames = vec![vec![1, 0, 2], vec![0, 1, 1], vec![1, 1, 0]];
-        assert_eq!(running_totals(&frames, 2), vec![vec![1, 0], vec![1, 1], vec![2, 2]]);
+        assert_eq!(
+            running_totals(&frames, 2),
+            vec![vec![1, 0], vec![1, 1], vec![2, 2]]
+        );
     }
 }

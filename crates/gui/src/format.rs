@@ -22,7 +22,12 @@ pub fn thousands(val: u64) -> String {
     digits
         .chars()
         .enumerate()
-        .flat_map(|(i, ch)| (i > 0 && (len - i) % 3 == 0).then_some(',').into_iter().chain([ch]))
+        .flat_map(|(i, ch)| {
+            (i > 0 && (len - i).is_multiple_of(3))
+                .then_some(',')
+                .into_iter()
+                .chain([ch])
+        })
         .collect()
 }
 

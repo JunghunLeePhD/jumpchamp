@@ -37,9 +37,20 @@ impl FrameSet {
             return None;
         }
 
-        let width = deltas.iter().map(|h| histogram::trimmed_len(h)).max().unwrap_or(0).max(1);
+        let width = deltas
+            .iter()
+            .map(|h| histogram::trimmed_len(h))
+            .max()
+            .unwrap_or(0)
+            .max(1);
         let frames = histogram::running_totals(&deltas, width);
-        Some(Self { min, max, k, step, frames })
+        Some(Self {
+            min,
+            max,
+            k,
+            step,
+            frames,
+        })
     }
 
     /// Whether these frames were built for this exact query.
@@ -84,7 +95,9 @@ mod tests {
     #[test]
     fn test_frames_are_cumulative() {
         let frames = FrameSet::build(1, 10_000, 1, 10, |_| true).unwrap();
-        let totals: Vec<u64> = (0..10).map(|i| frames.at(1 + i * frames.step).iter().sum()).collect();
+        let totals: Vec<u64> = (0..10)
+            .map(|i| frames.at(1 + i * frames.step).iter().sum())
+            .collect();
         assert!(totals.windows(2).all(|w| w[0] <= w[1]));
         assert_eq!(*totals.last().unwrap(), 10_000);
     }

@@ -28,7 +28,9 @@ pub fn find_top5_indices(display_data: &[(u64, u64)]) -> [(usize, u64); 5] {
 #[inline]
 pub fn is_top5(top5: &[(usize, u64); 5], data_len: usize, idx: usize) -> bool {
     let valid_len = data_len.min(5);
-    top5[..valid_len].iter().any(|&(top_idx, count)| count > 0 && top_idx == idx)
+    top5[..valid_len]
+        .iter()
+        .any(|&(top_idx, count)| count > 0 && top_idx == idx)
 }
 
 pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
@@ -56,7 +58,12 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
     let display_data = state.visible_bars();
     let total_count: u64 = display_data.iter().map(|&(_, cnt)| cnt).sum();
     let total_f64 = total_count.max(1) as f64;
-    let max_count = display_data.iter().map(|&(_, cnt)| cnt).max().unwrap_or(1).max(1) as f64;
+    let max_count = display_data
+        .iter()
+        .map(|&(_, cnt)| cnt)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f64;
 
     let max_prob = max_count / total_f64;
     let bars_len = display_data.len().max(1) as f64;
@@ -157,7 +164,11 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
 
                     // 1. Top Percentage Annotation
                     if state.prefs.show_pct_labels && !is_selected {
-                        let text_color = if is_hovered { palette.accent } else { palette.text };
+                        let text_color = if is_hovered {
+                            palette.accent
+                        } else {
+                            palette.text
+                        };
                         let pct_text = Text::new(
                             PlotPoint::new(x_pos, prob + max_prob * 0.03),
                             format!("{pct:.1}%"),
@@ -179,11 +190,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
                         palette.text_dim
                     };
 
-                    let gap_text = Text::new(
-                        PlotPoint::new(x_pos, -max_prob * 0.04),
-                        format!("{gap}"),
-                    )
-                    .color(gap_color);
+                    let gap_text =
+                        Text::new(PlotPoint::new(x_pos, -max_prob * 0.04), format!("{gap}"))
+                            .color(gap_color);
 
                     if is_top5 || is_selected {
                         top5_texts.push(gap_text.clone());
@@ -213,7 +222,11 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
                 }
             }
 
-            plot_ui.line(Line::new(vec![[-0.5, 0.0], [bars_len - 0.5, 0.0]]).color(palette.baseline).width(1.5_f32));
+            plot_ui.line(
+                Line::new(vec![[-0.5, 0.0], [bars_len - 0.5, 0.0]])
+                    .color(palette.baseline)
+                    .width(1.5_f32),
+            );
             plot_ui.bar_chart(BarChart::new(bars));
 
             let bounds = plot_ui.plot_bounds();
@@ -274,9 +287,12 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
                                                 .color(palette.text),
                                         );
                                         ui.label(
-                                            egui::RichText::new(format!("Count: {}", thousands(count)))
-                                                .size(14.0)
-                                                .color(palette.text_dim),
+                                            egui::RichText::new(format!(
+                                                "Count: {}",
+                                                thousands(count)
+                                            ))
+                                            .size(14.0)
+                                            .color(palette.text_dim),
                                         );
                                         ui.add_space(2.0);
                                         ui.label(
@@ -308,10 +324,13 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
                     .inner_margin(7.0_f32)
                     .show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new(format!("📌 Gap Δ_{} = {pinned_gap}", state.query.k))
-                                .strong()
-                                .size(14.5)
-                                .color(palette.accent),
+                            egui::RichText::new(format!(
+                                "📌 Gap Δ_{} = {pinned_gap}",
+                                state.query.k
+                            ))
+                            .strong()
+                            .size(14.5)
+                            .color(palette.accent),
                         );
                         ui.horizontal(|ui| {
                             ui.label(
@@ -422,11 +441,15 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
     state.selected_gap = new_selected_gap;
 }
 
-fn sub_rect_painter(painter: &egui::Painter, x0: f32, y0: f32, x1: f32, y1: f32, color: egui::Color32) {
-    let sub_rect = egui::Rect::from_min_max(
-        egui::pos2(x0, y0),
-        egui::pos2(x1, y1),
-    );
+fn sub_rect_painter(
+    painter: &egui::Painter,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    color: egui::Color32,
+) {
+    let sub_rect = egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
     painter.rect_filled(sub_rect, 0.0, color);
 }
 

@@ -25,14 +25,20 @@ pub fn render(ctx: &Context, state: &mut AppState, palette: &Palette) {
         .fixed_size(egui::vec2(420.0, 315.0))
         .show(ctx, |ui| {
             ui.add_space(4.0);
-            section(ui, palette, "Theme Mode", |ui| theme_choice(ui, &mut state.prefs.theme));
+            section(ui, palette, "Theme Mode", |ui| {
+                theme_choice(ui, &mut state.prefs.theme)
+            });
             ui.add_space(6.0);
             let busy = state.playback.is_busy();
             ui.add_enabled_ui(!busy, |ui| {
-                section(ui, palette, "Global Numerical Limits", |ui| limits(ui, state, busy));
+                section(ui, palette, "Global Numerical Limits", |ui| {
+                    limits(ui, state, busy)
+                });
             });
             ui.add_space(6.0);
-            section(ui, palette, "Display & Chart Preferences", |ui| toggles(ui, state));
+            section(ui, palette, "Display & Chart Preferences", |ui| {
+                toggles(ui, state)
+            });
         });
     state.prefs.show_settings = open;
 }
@@ -56,12 +62,24 @@ fn theme_choice(ui: &mut Ui, mode: &mut ThemeMode) {
 
 fn limits(ui: &mut Ui, state: &mut AppState, locked: bool) {
     if locked {
-        ui.label(RichText::new("🔒 Locked while animation is running").small().italics().color(theme::LOCKED));
+        ui.label(
+            RichText::new("🔒 Locked while animation is running")
+                .small()
+                .italics()
+                .color(theme::LOCKED),
+        );
     }
     ui.horizontal(|ui| {
         ui.label("Max Prime Index Limit (n):");
         let mut limit = state.prefs.max_prime_limit;
-        if ui.add(egui::DragValue::new(&mut limit).speed(10_000_000).range(MIN_LIMIT..=MAX_LIMIT)).changed() {
+        if ui
+            .add(
+                egui::DragValue::new(&mut limit)
+                    .speed(10_000_000)
+                    .range(MIN_LIMIT..=MAX_LIMIT),
+            )
+            .changed()
+        {
             state.set_max_prime_limit(limit);
         }
         ui.label(format!("({})", compact(state.prefs.max_prime_limit)));
@@ -78,8 +96,14 @@ fn limits(ui: &mut Ui, state: &mut AppState, locked: bool) {
 
 fn toggles(ui: &mut Ui, state: &mut AppState) {
     let p = &mut state.prefs;
-    ui.checkbox(&mut p.show_pct_labels, "Show Percentage Annotations on Bars");
+    ui.checkbox(
+        &mut p.show_pct_labels,
+        "Show Percentage Annotations on Bars",
+    );
     ui.checkbox(&mut p.show_grid_lines, "Show Reference Grid Lines");
-    ui.checkbox(&mut p.show_heatmap_meter, "Show Heat Map Count Meter (Top-Right)");
+    ui.checkbox(
+        &mut p.show_heatmap_meter,
+        "Show Heat Map Count Meter (Top-Right)",
+    );
     ui.checkbox(&mut p.show_bar_tooltip, "Show Cursor Hover Details Tooltip");
 }

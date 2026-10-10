@@ -71,8 +71,16 @@ impl Palette {
 /// Applies the window/panel visuals for `mode`.
 pub fn apply(ctx: &egui::Context, mode: ThemeMode) {
     let (mut visuals, window, panel) = match mode {
-        ThemeMode::Dark => (Visuals::dark(), Color32::from_rgb(14, 17, 23), Color32::from_rgb(26, 30, 38)),
-        ThemeMode::Light => (Visuals::light(), Color32::from_rgb(245, 247, 250), Color32::WHITE),
+        ThemeMode::Dark => (
+            Visuals::dark(),
+            Color32::from_rgb(14, 17, 23),
+            Color32::from_rgb(26, 30, 38),
+        ),
+        ThemeMode::Light => (
+            Visuals::light(),
+            Color32::from_rgb(245, 247, 250),
+            Color32::WHITE,
+        ),
     };
     visuals.window_fill = window;
     visuals.panel_fill = panel;
@@ -82,7 +90,13 @@ pub fn apply(ctx: &egui::Context, mode: ThemeMode) {
 
 /// Viridis colormap, `t` in `[0, 1]`.
 pub fn viridis(t: f64) -> Color32 {
-    const STOPS: [(u8, u8, u8); 5] = [(68, 1, 84), (59, 82, 139), (33, 145, 140), (94, 201, 98), (253, 231, 37)];
+    const STOPS: [(u8, u8, u8); 5] = [
+        (68, 1, 84),
+        (59, 82, 139),
+        (33, 145, 140),
+        (94, 201, 98),
+        (253, 231, 37),
+    ];
     let x = t.clamp(0.0, 1.0) * (STOPS.len() - 1) as f64;
     let i = (x.floor() as usize).min(STOPS.len() - 2);
     let frac = x - i as f64;

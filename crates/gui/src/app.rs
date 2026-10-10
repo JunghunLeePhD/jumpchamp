@@ -27,7 +27,8 @@ impl App for JumpChampApp {
         theme::apply(ctx, self.state.prefs.theme);
 
         actions::receive(&mut self.state, &self.worker);
-        if let Some(delay) = actions::tick(&mut self.state, &self.worker, std::time::Instant::now()) {
+        if let Some(delay) = actions::tick(&mut self.state, &self.worker, std::time::Instant::now())
+        {
             ctx.request_repaint_after(delay);
         }
 
@@ -60,7 +61,9 @@ pub fn run() -> eframe::Result<()> {
         .with_inner_size([1400.0, 900.0])
         .with_min_inner_size([900.0, 600.0]);
 
-    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/128x128.png")) {
+    if let Ok(icon) =
+        eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/128x128.png"))
+    {
         viewport = viewport.with_icon(icon);
     }
 

@@ -22,7 +22,11 @@ pub struct Query {
 
 impl Query {
     pub fn full(limit: u64) -> Self {
-        Self { k: DEFAULT_K, min: 1, max: limit }
+        Self {
+            k: DEFAULT_K,
+            min: 1,
+            max: limit,
+        }
     }
 
     /// Prime-index distance between animation frames.
@@ -94,12 +98,17 @@ impl AppState {
     /// Replaces the bars with the most frequent gaps of `hist` and shows all ranks.
     pub fn show_histogram(&mut self, hist: &[u64]) {
         self.bars = top_gaps(hist, MAX_BARS);
-        self.rank = Rank { min: 1, max: self.bars.len().max(1) };
+        self.rank = Rank {
+            min: 1,
+            max: self.bars.len().max(1),
+        };
     }
 
     /// Shows the precomputed frame for the current position. False if no frames match the query.
     pub fn show_cached_frame(&mut self) -> bool {
-        let Some(frames) = self.frames.take() else { return false };
+        let Some(frames) = self.frames.take() else {
+            return false;
+        };
         let hit = frames.matches(self.query.min, self.query.max, self.query.k);
         if hit {
             self.show_histogram(frames.at(self.playback.position));
@@ -178,7 +187,11 @@ mod tests {
     fn test_show_cached_frame_requires_matching_query() {
         let mut state = AppState::default();
         assert!(!state.show_cached_frame());
-        state.query = Query { k: 1, min: 1, max: 1_000 };
+        state.query = Query {
+            k: 1,
+            min: 1,
+            max: 1_000,
+        };
         state.frames = FrameSet::build(1, 1_000, 1, 10, |_| true);
         state.playback.position = 1_000;
         assert!(state.show_cached_frame());

@@ -28,7 +28,13 @@ pub struct Playback {
 
 impl Playback {
     pub fn new(position: u64) -> Self {
-        Self { mode: Mode::Stopped, direction: Direction::Forward, position, fps: 30.0, last_tick: None }
+        Self {
+            mode: Mode::Stopped,
+            direction: Direction::Forward,
+            position,
+            fps: 30.0,
+            last_tick: None,
+        }
     }
 
     /// Playing or precaching — i.e. the range controls must stay locked.
@@ -49,7 +55,9 @@ impl Playback {
 
     /// True (and records `now`) if a new frame is due.
     pub fn due(&mut self, now: Instant) -> bool {
-        let due = self.last_tick.map_or(true, |last| now.duration_since(last) >= self.interval());
+        let due = self
+            .last_tick
+            .is_none_or(|last| now.duration_since(last) >= self.interval());
         if due {
             self.last_tick = Some(now);
         }
@@ -61,7 +69,9 @@ impl Playback {
     pub fn advance(&mut self, min: u64, max: u64, step: u64) -> bool {
         let next = match self.direction {
             Direction::Forward if self.position < max => (self.position + step).min(max),
-            Direction::Reverse if self.position > min => self.position.saturating_sub(step).max(min),
+            Direction::Reverse if self.position > min => {
+                self.position.saturating_sub(step).max(min)
+            }
             _ => {
                 if self.mode == Mode::Playing {
                     self.mode = Mode::Stopped;

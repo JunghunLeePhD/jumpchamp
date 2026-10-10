@@ -13,7 +13,11 @@ pub fn render(ui: &mut Ui, state: &mut AppState, palette: &Palette) -> Option<Ac
     let mut action = None;
     ui.add_space(2.0);
     ui.horizontal(|ui| {
-        if ui.button("⚙").on_hover_text("Settings & Preferences").clicked() {
+        if ui
+            .button("⚙")
+            .on_hover_text("Settings & Preferences")
+            .clicked()
+        {
             state.prefs.show_settings ^= true;
         }
         ui.add_enabled_ui(!state.playback.is_busy(), |ui| {
@@ -58,7 +62,15 @@ fn index_range(ui: &mut Ui, state: &mut AppState, palette: &Palette) {
     if index_input(ui, &mut q.min, 1..=limit).changed() {
         q.max = q.max.max(q.min);
     }
-    range_slider(ui, (&mut q.min, &mut q.max), limit, 150.0, palette.accent, palette).on_hover_text(format!(
+    range_slider(
+        ui,
+        (&mut q.min, &mut q.max),
+        limit,
+        150.0,
+        palette.accent,
+        palette,
+    )
+    .on_hover_text(format!(
         "Prime Index Range: n = {} ~ {} (p_n_min ~ p_n_max)",
         compact(q.min),
         compact(q.max)
@@ -78,8 +90,15 @@ fn rank_range(ui: &mut Ui, state: &mut AppState, palette: &Palette) {
     ui.add(egui::DragValue::new(&mut r.min).range(1..=r.max));
 
     let (mut lo, mut hi) = (r.min as u64, r.max as u64);
-    range_slider(ui, (&mut lo, &mut hi), limit as u64, 100.0, palette.rank_fill, palette)
-        .on_hover_text(format!("Rank Range: Rank {lo} ~ Rank {hi}"));
+    range_slider(
+        ui,
+        (&mut lo, &mut hi),
+        limit as u64,
+        100.0,
+        palette.rank_fill,
+        palette,
+    )
+    .on_hover_text(format!("Rank Range: Rank {lo} ~ Rank {hi}"));
     (r.min, r.max) = (lo as usize, hi as usize);
 
     ui.add(egui::DragValue::new(&mut r.max).range(r.min..=limit));

@@ -19,7 +19,12 @@ pub enum Job {
     /// Gap histogram for prime indices `min..=max`.
     Histogram { min: u64, max: u64, k: usize },
     /// `count` cumulative animation frames over `min..=max`.
-    Frames { min: u64, max: u64, k: usize, count: usize },
+    Frames {
+        min: u64,
+        max: u64,
+        k: usize,
+        count: usize,
+    },
 }
 
 pub enum Event {
@@ -68,7 +73,11 @@ impl Worker {
     /// Events from current (non-cancelled) jobs.
     pub fn poll(&self) -> Vec<Event> {
         let now = self.epoch();
-        self.rx.try_iter().filter(|(tag, _)| *tag == now).map(|(_, e)| e).collect()
+        self.rx
+            .try_iter()
+            .filter(|(tag, _)| *tag == now)
+            .map(|(_, e)| e)
+            .collect()
     }
 
     fn epoch(&self) -> u64 {
@@ -76,7 +85,12 @@ impl Worker {
     }
 }
 
-fn serve(commands: Receiver<Command>, events: Sender<(u64, Event)>, epoch: Arc<AtomicU64>, notify: impl Fn()) {
+fn serve(
+    commands: Receiver<Command>,
+    events: Sender<(u64, Event)>,
+    epoch: Arc<AtomicU64>,
+    notify: impl Fn(),
+) {
     let mut cache = ChunkCache::default();
     let emit = |tag: u64, event: Event| {
         events.send((tag, event)).ok();
@@ -99,7 +113,7 @@ fn serve(commands: Receiver<Command>, events: Sender<(u64, Event)>, epoch: Arc<A
 
         let mut last_report: Option<Instant> = None;
         let on_block = |p: Progress| {
-            if p.done == p.total || last_report.map_or(true, |t| t.elapsed() >= PROGRESS_INTERVAL) {
+            if p.done == p.total || last_report.is_none_or(|t| t.elapsed() >= PROGRESS_INTERVAL) {
                 last_report = Some(Instant::now());
                 emit(tag, Event::Progress(p));
             }
@@ -109,12 +123,10 @@ fn serve(commands: Receiver<Command>, events: Sender<(u64, Event)>, epoch: Arc<A
         let start = Instant::now();
         let ms = || start.elapsed().as_secs_f64() * 1000.0;
         let result = match job {
-            Job::Histogram { min, max, k } => {
-                range_histogram(min, max, k, &mut cache, on_block).map(|hist| Event::Histogram { hist, ms: ms() })
-            }
-            Job::Frames { min, max, k, count } => {
-                FrameSet::build(min, max, k, count, on_block).map(|frames| Event::Frames { frames, ms: ms() })
-            }
+            Job::Histogram { min, max, k } => range_histogram(min, max, k, &mut cache, on_block)
+                .map(|hist| Event::Histogram { hist, ms: ms() }),
+            Job::Frames { min, max, k, count } => FrameSet::build(min, max, k, count, on_block)
+                .map(|frames| Event::Frames { frames, ms: ms() }),
         };
         if let Some(event) = result {
             emit(tag, event);
@@ -142,7 +154,11 @@ mod tests {
     #[test]
     fn test_histogram_job() {
         let worker = Worker::spawn(|| {});
-        worker.run(Job::Histogram { min: 1, max: 9, k: 1 });
+        worker.run(Job::Histogram {
+            min: 1,
+            max: 9,
+            k: 1,
+        });
         // primes 2..=29: gaps 1,2,2,4,2,4,2,4,6
         match wait_for_result(&worker) {
             Event::Histogram { hist, .. } => assert_eq!(&hist[..7], &[0, 1, 4, 0, 3, 0, 1]),
@@ -153,7 +169,12 @@ mod tests {
     #[test]
     fn test_frames_job() {
         let worker = Worker::spawn(|| {});
-        worker.run(Job::Frames { min: 1, max: 1_000, k: 2, count: 10 });
+        worker.run(Job::Frames {
+            min: 1,
+            max: 1_000,
+            k: 2,
+            count: 10,
+        });
         match wait_for_result(&worker) {
             Event::Frames { frames, .. } => assert!(frames.matches(1, 1_000, 2)),
             _ => panic!("expected frames"),
@@ -163,9 +184,17 @@ mod tests {
     #[test]
     fn test_cancelled_job_events_are_dropped() {
         let worker = Worker::spawn(|| {});
-        worker.run(Job::Histogram { min: 1, max: 1_000, k: 1 });
+        worker.run(Job::Histogram {
+            min: 1,
+            max: 1_000,
+            k: 1,
+        });
         worker.cancel();
-        worker.run(Job::Histogram { min: 1, max: 3, k: 1 });
+        worker.run(Job::Histogram {
+            min: 1,
+            max: 3,
+            k: 1,
+        });
         match wait_for_result(&worker) {
             Event::Histogram { hist, .. } => assert_eq!(hist.iter().sum::<u64>(), 3),
             _ => panic!("expected histogram"),

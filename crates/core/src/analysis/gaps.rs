@@ -12,7 +12,7 @@ pub fn apply_interval(
 ) -> impl Iterator<Item = u64> {
     primes
         .take_while(move |&p| p <= max) // Early exit when p > max_prime
-        .filter(move |&p| p >= min)     // Lower bound filter
+        .filter(move |&p| p >= min) // Lower bound filter
 }
 
 /// Transforms a sequence of primes into a sequence of k-step gaps (`p_{n+k} − p_n`).
@@ -60,7 +60,11 @@ pub fn record_gaps(gaps: impl Iterator<Item = (u64, u64, u64)>) -> Vec<RecordGap
         if gap > max_gap {
             max_gap = gap;
             let ln_p = (prime as f64).ln();
-            let cramer_ratio = if ln_p > 0.0 { gap as f64 / (ln_p * ln_p) } else { 0.0 };
+            let cramer_ratio = if ln_p > 0.0 {
+                gap as f64 / (ln_p * ln_p)
+            } else {
+                0.0
+            };
             records.push(RecordGap {
                 prime_index: n,
                 prime,
@@ -93,7 +97,6 @@ pub fn gap_transition_matrix(gaps: impl Iterator<Item = u64>) -> BTreeMap<(u64, 
     }
     transitions
 }
-
 
 /// Applies 1-based index range bounds [min_idx, max_idx] using iterator skip and take.
 pub fn apply_offset_interval(
@@ -233,5 +236,3 @@ mod tests {
         assert_eq!(freq.get(&8), None);
     }
 }
-
-

@@ -27,7 +27,11 @@ pub fn scan_k_gaps(
     mut visit: impl FnMut(u64, u64),
 ) -> bool {
     let prime_count = last_index.saturating_add(k as u64);
-    let block = if prime_count >= LARGE_COUNT { LARGE_BLOCK } else { SMALL_BLOCK };
+    let block = if prime_count >= LARGE_COUNT {
+        LARGE_BLOCK
+    } else {
+        SMALL_BLOCK
+    };
     let (total, blocks) = prime_blocks_up_to(nth_prime_upper_bound(prime_count) as usize, block);
 
     let mut cancelled = false;
@@ -70,7 +74,15 @@ mod tests {
     #[test]
     fn test_reports_progress_per_block() {
         let mut reports = vec![];
-        scan_k_gaps(10, 1, |p| { reports.push(p); true }, |_, _| {});
+        scan_k_gaps(
+            10,
+            1,
+            |p| {
+                reports.push(p);
+                true
+            },
+            |_, _| {},
+        );
         assert_eq!(reports, vec![Progress { done: 1, total: 1 }]);
     }
 }

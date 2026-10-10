@@ -22,7 +22,10 @@ pub fn stream_prime_blocks_range<'a>(
 /// Like [`stream_prime_blocks_range`] starting at 2, but owns its base primes.
 ///
 /// Returns the number of blocks alongside the stream (useful for progress reporting).
-pub fn prime_blocks_up_to(limit: usize, block_size: usize) -> (usize, impl Iterator<Item = Vec<u64>>) {
+pub fn prime_blocks_up_to(
+    limit: usize,
+    block_size: usize,
+) -> (usize, impl Iterator<Item = Vec<u64>>) {
     let base_primes = small_primes(isqrt(limit).max(2));
     let blocks = limit.saturating_sub(2) / block_size + 1;
     let stream = (2..=limit).step_by(block_size).map(move |low| {
@@ -58,7 +61,8 @@ mod tests {
         let block_size = 25_000;
         let base_primes = small_primes((limit as f64).sqrt() as usize);
 
-        let blocks: Vec<Vec<u64>> = stream_prime_blocks_range(1, limit, block_size, &base_primes).collect();
+        let blocks: Vec<Vec<u64>> =
+            stream_prime_blocks_range(1, limit, block_size, &base_primes).collect();
 
         // Should yield 4 blocks of size 25,000 span each
         assert_eq!(blocks.len(), 4);
@@ -78,7 +82,10 @@ mod tests {
     fn test_nth_prime_upper_bound_holds() {
         let primes = small_primes(2_000_000);
         for n in [1u64, 2, 5, 6, 10, 100, 1_000, 10_000, 100_000] {
-            assert!(nth_prime_upper_bound(n) >= primes[n as usize - 1] as u64, "n = {n}");
+            assert!(
+                nth_prime_upper_bound(n) >= primes[n as usize - 1] as u64,
+                "n = {n}"
+            );
         }
     }
 }

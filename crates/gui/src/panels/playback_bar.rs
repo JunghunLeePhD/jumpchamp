@@ -28,7 +28,9 @@ pub fn render(ui: &mut Ui, state: &mut AppState) -> Option<Action> {
 }
 
 fn button(ui: &mut Ui, label: &str, tip: &str) -> bool {
-    ui.add_sized(BUTTON, Button::new(label)).on_hover_text(tip).clicked()
+    ui.add_sized(BUTTON, Button::new(label))
+        .on_hover_text(tip)
+        .clicked()
 }
 
 /// Play / pause / stop / cancel, depending on the mode.
@@ -38,7 +40,11 @@ fn transport(ui: &mut Ui, state: &mut AppState) -> Option<Action> {
     match p.mode {
         Mode::Precaching => {
             let size = vec2(BUTTON.x * 2.0 + ui.spacing().item_spacing.x, BUTTON.y);
-            if ui.add_sized(size, Button::new("⏹ Cancel")).on_hover_text("Cancel in-progress pre-caching computation").clicked() {
+            if ui
+                .add_sized(size, Button::new("⏹ Cancel"))
+                .on_hover_text("Cancel in-progress pre-caching computation")
+                .clicked()
+            {
                 action = Some(Action::Cancel);
             }
         }
@@ -69,7 +75,12 @@ fn stepping(ui: &mut Ui, state: &mut AppState) -> Option<Action> {
     const LOCKED: &str = "disabled while animation is running. Pause or stop first.";
     let mut action = None;
     let mut step = |label: &str, tip: &str| {
-        hint(ui.add_sized(BUTTON, Button::new(label)), tip, &format!("{tip} is {LOCKED}")).clicked()
+        hint(
+            ui.add_sized(BUTTON, Button::new(label)),
+            tip,
+            &format!("{tip} is {LOCKED}"),
+        )
+        .clicked()
     };
     if step("⏮", "Step Back One Frame") {
         action = Some(Action::Step(Direction::Reverse));
@@ -102,10 +113,17 @@ fn speed(ui: &mut Ui, state: &mut AppState) {
     ui.label("Speed:");
     ui.add_sized(
         [110.0, 18.0],
-        egui::Slider::new(fps, 1.0..=120.0).step_by(1.0).suffix(" FPS").clamping(egui::SliderClamping::Always),
+        egui::Slider::new(fps, 1.0..=120.0)
+            .step_by(1.0)
+            .suffix(" FPS")
+            .clamping(egui::SliderClamping::Always),
     );
     for preset in SPEED_PRESETS {
-        if ui.button(format!("{preset}")).on_hover_text(format!("Set to {preset} FPS")).clicked() {
+        if ui
+            .button(format!("{preset}"))
+            .on_hover_text(format!("Set to {preset} FPS"))
+            .clicked()
+        {
             *fps = preset;
         }
     }
@@ -116,11 +134,18 @@ fn progress(ui: &mut Ui, state: &AppState) {
     let (fraction, text, tip) = match (state.playback.mode, state.progress) {
         (Mode::Precaching, progress) => {
             let (fraction, blocks) = match progress {
-                Some(p) => ((p.done as f32 / p.total as f32).clamp(0.0, 0.99), format!(" (Block {}/{})", p.done, p.total)),
+                Some(p) => (
+                    (p.done as f32 / p.total as f32).clamp(0.0, 0.99),
+                    format!(" (Block {}/{})", p.done, p.total),
+                ),
                 None => (0.0, String::new()),
             };
             let text = format!("Caching: {:.0}%", fraction * 100.0);
-            (fraction, text, format!("Pre-caching {FRAMES} animation frames in background{blocks}..."))
+            (
+                fraction,
+                text,
+                format!("Pre-caching {FRAMES} animation frames in background{blocks}..."),
+            )
         }
         _ => {
             let fraction = state.animation_progress();
@@ -133,11 +158,21 @@ fn progress(ui: &mut Ui, state: &AppState) {
             (fraction, format!("{:.0}%", fraction * 100.0), tip)
         }
     };
-    ui.add_sized([120.0, 18.0], ProgressBar::new(fraction).show_percentage().text(text)).on_hover_text(tip);
+    ui.add_sized(
+        [120.0, 18.0],
+        ProgressBar::new(fraction).show_percentage().text(text),
+    )
+    .on_hover_text(tip);
     ui.separator();
 }
 
 fn frame_counter(ui: &mut Ui, state: &AppState) {
-    let frame = state.playback.frame_number(state.query.min, state.query.step(), FRAMES as u64);
-    ui.label(RichText::new(format!("Frame {frame}/{FRAMES}")).strong().color(theme::PLAYING));
+    let frame = state
+        .playback
+        .frame_number(state.query.min, state.query.step(), FRAMES as u64);
+    ui.label(
+        RichText::new(format!("Frame {frame}/{FRAMES}"))
+            .strong()
+            .color(theme::PLAYING),
+    );
 }

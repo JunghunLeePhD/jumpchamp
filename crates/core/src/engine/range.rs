@@ -88,7 +88,7 @@ fn scan_and_cache(
     });
 
     // The last chunk is only cached if the walk reached its end.
-    if completed && (max + 1) % CHUNK == 0 {
+    if completed && (max + 1).is_multiple_of(CHUNK) {
         cache.insert(chunk, k, &chunk_hist);
     }
     completed.then_some(hist)

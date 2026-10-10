@@ -44,13 +44,20 @@ pub fn range_slider(
     let fill = if enabled { fill } else { palette.disabled };
     let (x_lo, x_hi, y) = (x_of(*lo), x_of(*hi), rect.center().y);
     let painter = ui.painter();
-    painter.line_segment([pos2(left, y), pos2(right, y)], Stroke::new(4.0_f32, palette.rail));
+    painter.line_segment(
+        [pos2(left, y), pos2(right, y)],
+        Stroke::new(4.0_f32, palette.rail),
+    );
     painter.line_segment([pos2(x_lo, y), pos2(x_hi, y)], Stroke::new(4.0_f32, fill));
 
     painter.circle_filled(pos2(x_lo, y), THUMB, palette.card_bg);
     painter.circle_stroke(pos2(x_lo, y), THUMB, Stroke::new(1.5_f32, fill));
     painter.circle_filled(pos2(x_hi, y), THUMB, fill);
-    painter.circle_stroke(pos2(x_hi, y), THUMB, Stroke::new(1.5_f32, if enabled { palette.text } else { fill }));
+    painter.circle_stroke(
+        pos2(x_hi, y),
+        THUMB,
+        Stroke::new(1.5_f32, if enabled { palette.text } else { fill }),
+    );
 
     response
 }
