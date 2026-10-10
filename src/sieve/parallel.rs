@@ -1,27 +1,27 @@
-// ============================================================================
-// Rayon-Parallel Sieve Dispatcher — L1-cache-aligned 32KB bitmask segments
-// ============================================================================
+//! Rayon-parallel sieve over L1-cache-sized segments.
 
 use rayon::prelude::*;
-use super::basic::sieve_segment;
 
-/// Sieves the range `[start, end]` in parallel using Rayon.
+use super::wheel::sieve_segment;
+
+/// Numbers per segment: 30 × 8192 → an 8 KB wheel-30 bitmask (fits in L1 cache).
+const SEGMENT_SPAN: usize = 245_760;
+
+/// Sieves `[start, end]` in parallel; returns the primes in ascending order.
 ///
-/// The range is split into cache-aligned windows, each sieved independently
-/// by bitpacked `sieve_segment` across all available threads.
+/// `base_primes` must contain every prime up to `√end`.
 pub fn sieve_range_parallel(start: usize, end: usize, base_primes: &[usize]) -> Vec<u64> {
     if start > end {
         return vec![];
     }
-    let segment_span = 245_760; // 30 * 8192 numbers = 8 KB Wheel-30 bitmask, L1 cache fit
-    let num_segments = (end - start) / segment_span + 1;
+    let segments = (end - start) / SEGMENT_SPAN + 1;
 
-    (0..num_segments)
+    (0..segments)
         .into_par_iter()
-        .flat_map(|idx| {
-            let seg_low = start + idx * segment_span;
-            let seg_high = (seg_low + segment_span - 1).min(end);
-            sieve_segment(seg_low, seg_high, base_primes)
+        .flat_map(|i| {
+            let low = start + i * SEGMENT_SPAN;
+            let high = (low + SEGMENT_SPAN - 1).min(end);
+            sieve_segment(low, high, base_primes)
         })
         .collect()
 }
@@ -29,7 +29,7 @@ pub fn sieve_range_parallel(start: usize, end: usize, base_primes: &[usize]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sieve::basic::small_primes;
+    use crate::sieve::wheel::small_primes;
 
     #[test]
     fn test_parallel_sieve_matches_sequential() {
@@ -57,4 +57,3 @@ mod tests {
         assert_eq!(window_primes.last(), Some(&1999993));
     }
 }
-
