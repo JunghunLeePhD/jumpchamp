@@ -26,11 +26,11 @@ pub fn format_report(freq_map: &BTreeMap<u64, u64>, top_min: usize, top_max: usi
 
     for (diff, count) in &sorted[start_idx..end_idx] {
         let pct = (*count as f64 / total_pairs as f64) * 100.0;
-        out.push_str(&format!("{:<12} {:<15} {:.2}%\n", diff, count, pct));
+        out.push_str(&format!("{diff:<12} {count:<15} {pct:.2}%\n"));
     }
 
     out.push_str(&format!("{}\n", "-".repeat(42)));
-    out.push_str(&format!("Total Analyzed Pairs: {}\n", total_pairs));
+    out.push_str(&format!("Total Analyzed Pairs: {total_pairs}\n"));
     out
 }
 
@@ -60,7 +60,7 @@ pub fn format_residue_report(residues: &BTreeMap<u64, u64>, modulus: u64) -> Str
     let mut out = String::new();
     out.push_str(&format!(
         "{:<15} {:<15} {:<12}\n",
-        format!("Residue (mod {})", modulus),
+        format!("Residue (mod {modulus})"),
         "Frequency",
         "Percentage"
     ));
@@ -68,7 +68,7 @@ pub fn format_residue_report(residues: &BTreeMap<u64, u64>, modulus: u64) -> Str
 
     for (&rem, &count) in residues {
         let pct = (count as f64 / total as f64) * 100.0;
-        out.push_str(&format!("{:<15} {:<15} {:.2}%\n", rem, count, pct));
+        out.push_str(&format!("{rem:<15} {count:<15} {pct:.2}%\n"));
     }
     out.push_str(&format!("{}\n", "-".repeat(45)));
     out

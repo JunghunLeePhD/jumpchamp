@@ -77,8 +77,8 @@ fi
 
 print_header "Phase 3: Compiler & Linter Diagnostics (cargo clippy)"
 
-if cargo clippy --workspace --all-targets -- -D warnings; then
-    pass_step "Clippy Strict Linter (cargo clippy -D warnings)"
+if cargo clippy --workspace --all-targets -- -D warnings -D clippy::uninlined_format_args; then
+    pass_step "Clippy Strict Linter (cargo clippy -D warnings -D clippy::uninlined_format_args)"
 else
     fail_step "Clippy Linter" "cargo clippy detected warnings or errors"
 fi
