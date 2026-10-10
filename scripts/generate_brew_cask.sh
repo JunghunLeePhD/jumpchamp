@@ -27,8 +27,17 @@ echo "=================================================="
 ARM64_URL="https://github.com/${REPO}/releases/download/${TAG}/JumpChamp-macos-arm64.app.zip"
 INTEL_URL="https://github.com/${REPO}/releases/download/${TAG}/JumpChamp-macos-intel-x86_64.app.zip"
 
+TMP_DIR="$(mktemp -d /tmp/jumpchamp_cask_download.XXXXXX)"
+trap 'rm -rf "${TMP_DIR}"' EXIT
+
 echo "Fetching Apple Silicon (arm64) SHA256 checksum..."
-ARM64_SHA="$(curl -sL "${ARM64_URL}" | sha256sum | awk '{print $1}')"
+TMP_ARM="${TMP_DIR}/jumpchamp-arm64.zip"
+if ! curl --fail -sL -o "${TMP_ARM}" "${ARM64_URL}"; then
+    echo "Error: Failed to download arm64 asset at ${ARM64_URL}" >&2
+    echo "Please ensure GitHub Actions has finished publishing release assets for ${TAG}." >&2
+    exit 1
+fi
+ARM64_SHA="$(sha256sum "${TMP_ARM}" | awk '{print $1}')"
 
 if [ -z "$ARM64_SHA" ] || [ ${#ARM64_SHA} -ne 64 ]; then
     echo "Error: Failed to compute SHA256 for arm64 binary at ${ARM64_URL}" >&2
@@ -37,7 +46,13 @@ fi
 echo "  -> arm64: ${ARM64_SHA}"
 
 echo "Fetching Intel (x86_64) SHA256 checksum..."
-INTEL_SHA="$(curl -sL "${INTEL_URL}" | sha256sum | awk '{print $1}')"
+TMP_INTEL="${TMP_DIR}/jumpchamp-intel.zip"
+if ! curl --fail -sL -o "${TMP_INTEL}" "${INTEL_URL}"; then
+    echo "Error: Failed to download intel asset at ${INTEL_URL}" >&2
+    echo "Please ensure GitHub Actions has finished publishing release assets for ${TAG}." >&2
+    exit 1
+fi
+INTEL_SHA="$(sha256sum "${TMP_INTEL}" | awk '{print $1}')"
 
 if [ -z "$INTEL_SHA" ] || [ ${#INTEL_SHA} -ne 64 ]; then
     echo "Error: Failed to compute SHA256 for intel binary at ${INTEL_URL}" >&2

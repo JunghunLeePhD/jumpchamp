@@ -166,6 +166,65 @@ Whenever a version tag is pushed (e.g. `v1.0.0`) or dispatched manually:
 
 ---
 
+## 👨‍💻 For Developers: Managing Homebrew Distribution
+
+JumpChamp is distributed to macOS users via a custom Homebrew Tap ([`JunghunLeePhD/homebrew-tap`](https://github.com/JunghunLeePhD/homebrew-tap)).
+
+### 🔄 End-to-End Release & Tap Update Workflow
+
+When publishing a new release (e.g. `v1.0.1`):
+
+1. **Bump Version in `Cargo.toml` & Merge**:
+   - Update `version = "1.0.1"` in `Cargo.toml` (package and bundle metadata).
+   - Merge into `main` and push:
+     ```bash
+     git push origin main
+     ```
+
+2. **Tag & Trigger GitHub Actions**:
+   - Create and push the release tag:
+     ```bash
+     git tag v1.0.1
+     git push origin v1.0.1
+     ```
+   - Monitor GitHub Actions at [`.github/workflows/release-gui.yml`](file:///workspace/.github/workflows/release-gui.yml).
+   - Wait 2–3 minutes for both Apple Silicon and Intel macOS runners to build and upload the release `.app.zip` assets.
+
+3. **Generate Cask Definition with Checksums**:
+   - Once the release assets are published, run the automated generator script:
+     ```bash
+     ./scripts/generate_brew_cask.sh v1.0.1
+     ```
+   - This downloads the release assets, computes the verified SHA-256 checksums, and updates [`packaging/homebrew/Casks/jumpchamp.rb`](file:///workspace/packaging/homebrew/Casks/jumpchamp.rb).
+   - Commit the updated Cask definition:
+     ```bash
+     git add packaging/homebrew/Casks/jumpchamp.rb
+     git commit -m "feat(brew): update cask definition for v1.0.1 release"
+     git push origin main
+     ```
+
+4. **Update `homebrew-tap` Repository**:
+   - Copy `packaging/homebrew/Casks/jumpchamp.rb` to `Casks/jumpchamp.rb` in your [`JunghunLeePhD/homebrew-tap`](https://github.com/JunghunLeePhD/homebrew-tap) repository.
+   - Commit and push to `main` on `homebrew-tap`:
+     ```bash
+     git add Casks/jumpchamp.rb
+     git commit -m "feat: bump jumpchamp cask to v1.0.1"
+     git push origin main
+     ```
+
+5. **Upgrade & Verify on macOS**:
+   ```bash
+   brew update
+   brew upgrade --cask jumpchamp
+   ```
+
+### ⚠️ Troubleshooting: Checksum Mismatch Error
+If `brew upgrade` reports `Error: Cask reports different checksum`:
+- **Cause**: The Cask generator script was executed before GitHub Actions finished uploading the zip archives, causing it to hash GitHub's 404 "Not Found" response (`0019dfc4...`).
+- **Fix**: Re-run `./scripts/generate_brew_cask.sh vX.Y.Z` after the release assets appear on the GitHub Release page, and push the updated `Casks/jumpchamp.rb` to `homebrew-tap`.
+
+---
+
 ## 📜 License
 
 MIT License. Feel free to use and modify for analytical and educational research.
