@@ -1,417 +1,189 @@
-// ============================================================================
-// AppState & Data Structures for GUI
-// ============================================================================
+//! Application state: plain data, no channels or threads.
 
-use crossbeam_channel::{Receiver, Sender};
+use crate::engine::{frame_step, top_gaps, FrameSet, Progress};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThemeMode {
-    Dark,
-    #[default]
-    Light,
-}
+use super::playback::Playback;
+use super::prefs::{Prefs, MAX_LIMIT, MIN_LIMIT};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum SortOrder {
-    ByFrequency,
-    ByGapSize,
-}
+/// Frames per full animation.
+pub const FRAMES: usize = 300;
+/// At most this many (most frequent) gaps are kept for display.
+pub const MAX_BARS: usize = 1000;
+pub const DEFAULT_K: usize = 2;
+pub const MAX_K: usize = 1000;
 
-#[derive(Debug, Clone)]
-pub struct DatasetMetadata {
-    pub total_rows: u64,
-    pub unique_gaps: u64,
-    pub min_gap: u16,
-    pub max_gap: u16,
-}
-
-#[derive(Debug, Clone)]
-pub struct PrecomputedAnimData {
-    pub min_val: u64,
-    pub max_val: u64,
-    pub k: usize,
-    pub total_frames: usize,
-    pub step_size: u64,
-    pub prefix_sums: Vec<Vec<u64>>,
-}
-
-pub enum WorkerCommand {
-    ComputeGaps {
-        min_val: u64,
-        max_val: u64,
-        k: usize,
-        top_min: usize,
-        top_max: usize,
-        sort_by: SortOrder,
-    },
-    PrecacheAnimation {
-        min_val: u64,
-        max_val: u64,
-        k: usize,
-        total_frames: usize,
-    },
-    Cancel,
-    ClearCache,
-}
-
-pub enum WorkerResult {
-    Metadata(DatasetMetadata),
-    FrequencyData(Vec<(u64, u64)>),
-    PrecomputedAnimation(PrecomputedAnimData),
-    QueryLatency(f64),
-    Progress {
-        progress: f32,
-        current_block: usize,
-        total_blocks: usize,
-    },
-    Error(String),
-}
-
+/// Which k-step gaps, over which prime-index range `n = min..=max`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlayDirection {
-    Forward,
-    Reverse,
+pub struct Query {
+    pub k: usize,
+    pub min: u64,
+    pub max: u64,
+}
+
+impl Query {
+    pub fn full(limit: u64) -> Self {
+        Self { k: DEFAULT_K, min: 1, max: limit }
+    }
+
+    /// Prime-index distance between animation frames.
+    pub fn step(&self) -> u64 {
+        frame_step(self.min, self.max, FRAMES)
+    }
+}
+
+/// Visible slice of bars by frequency rank, 1-based inclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rank {
+    pub min: usize,
+    pub max: usize,
 }
 
 pub struct AppState {
-    // Controls
-    pub k: usize,
-    pub min_val: u64,
-    pub max_val: u64,
-    pub top_min: usize,
-    pub top_max: usize,
-    pub sort_by: SortOrder,
-
-    // Interactive Bar Selection (Persistent Focus / Pin Mode)
+    pub query: Query,
+    pub rank: Rank,
+    pub prefs: Prefs,
+    pub playback: Playback,
+    /// Pinned bar (by gap size).
     pub selected_gap: Option<u64>,
 
-    // Settings & Limits
-    pub show_settings: bool,
-    pub theme_mode: ThemeMode,
-    pub max_prime_limit: u64,
-    pub show_grid_lines: bool,
-    pub show_pct_labels: bool,
-    pub show_heatmap_meter: bool,
-    pub show_bar_tooltip: bool,
+    /// `(gap, count)` in ascending gap order.
+    pub bars: Vec<(u64, u64)>,
+    pub frames: Option<FrameSet>,
+    pub latency_ms: Option<f64>,
+    pub progress: Option<Progress>,
+}
 
-    // Animation Controls (Cumulative Linear Growth)
-    pub is_animating: bool,
-    pub is_precaching: bool,
-    pub is_frame_in_flight: bool,
-    pub anim_direction: PlayDirection,
-    pub anim_current_val: u64,
-    pub anim_step_size: u64,
-    pub anim_speed_fps: f32,
-    pub last_frame_instant: Option<std::time::Instant>,
-    pub anim_precomputed: Option<PrecomputedAnimData>,
-
-    // Data
-    pub metadata: Option<DatasetMetadata>,
-    pub freq_data: Vec<(u64, u64)>,
-    pub query_latency_ms: Option<f64>,
-
-    // Worker Status
-    pub is_loading: bool,
-    pub progress: f32,
-    pub current_block: usize,
-    pub total_blocks: usize,
-    pub error_msg: Option<String>,
-
-    // Channels
-    pub cmd_tx: Sender<WorkerCommand>,
-    pub res_rx: Receiver<WorkerResult>,
+impl Default for AppState {
+    fn default() -> Self {
+        Self::with_prefs(Prefs::default())
+    }
 }
 
 impl AppState {
-    pub fn new(cmd_tx: Sender<WorkerCommand>, res_rx: Receiver<WorkerResult>) -> Self {
-        let max_limit = 10_000_000u64;
-        let min_v = 1u64;
-        let max_v = max_limit;
-        let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
-
+    fn with_prefs(prefs: Prefs) -> Self {
+        let query = Query::full(prefs.max_prime_limit);
         Self {
-            k: 2,
-            min_val: min_v,
-            max_val: max_v, // Default: full range [1, Max Prime Index Limit] (n = 1 ~ 10,000,000)
-            top_min: 1,
-            top_max: 20,
-            sort_by: SortOrder::ByGapSize, // Default to Gap Mode (Fixed Numerical Order)
+            query,
+            rank: Rank { min: 1, max: 20 },
+            prefs,
+            playback: Playback::new(query.min),
             selected_gap: None,
-
-            show_settings: false,
-            theme_mode: ThemeMode::Light,
-            max_prime_limit: max_limit, // Default 10 Million Primes Limit
-            show_grid_lines: true,
-            show_pct_labels: true,
-            show_heatmap_meter: true,
-            show_bar_tooltip: false,
-
-            is_animating: false,
-            is_precaching: false,
-            is_frame_in_flight: false,
-            anim_direction: PlayDirection::Forward,
-            anim_current_val: min_v,
-            anim_step_size: default_step,
-            anim_speed_fps: 30.0,
-            last_frame_instant: None,
-            anim_precomputed: None,
-
-            metadata: None,
-            freq_data: Vec::new(),
-            query_latency_ms: None,
-
-            is_loading: false,
-            progress: 0.0,
-            current_block: 0,
-            total_blocks: 0,
-            error_msg: None,
-
-            cmd_tx,
-            res_rx,
+            bars: Vec::new(),
+            frames: None,
+            latency_ms: None,
+            progress: None,
         }
     }
 
-    /// Resets the application state and clears all in-memory precomputations and worker caches back to launch defaults.
+    /// Back to launch defaults, keeping preferences.
     pub fn reset(&mut self) {
-        let min_v = 1u64;
-        let max_v = self.max_prime_limit;
-        let default_step = (max_v.saturating_sub(min_v) / 300).max(1);
+        *self = Self::with_prefs(self.prefs.clone());
+    }
 
-        self.k = 2;
-        self.min_val = min_v;
-        self.max_val = max_v;
-        self.top_min = 1;
-        self.top_max = 20;
-        self.sort_by = SortOrder::ByGapSize;
-        self.selected_gap = None;
+    /// Sets the global index limit and widens the range to `[1, limit]`.
+    pub fn set_max_prime_limit(&mut self, limit: u64) {
+        let limit = limit.clamp(MIN_LIMIT, MAX_LIMIT);
+        self.prefs.max_prime_limit = limit;
+        self.query.max = limit;
+        if self.query.min > limit {
+            self.query.min = 1;
+        }
+        self.frames = None;
+    }
 
-        self.is_animating = false;
-        self.is_precaching = false;
-        self.is_frame_in_flight = false;
-        self.anim_direction = PlayDirection::Forward;
-        self.anim_current_val = min_v;
-        self.anim_step_size = default_step;
-        self.anim_speed_fps = 30.0;
-        self.last_frame_instant = None;
-        self.anim_precomputed = None;
+    /// Replaces the bars with the most frequent gaps of `hist` and shows all ranks.
+    pub fn show_histogram(&mut self, hist: &[u64]) {
+        self.bars = top_gaps(hist, MAX_BARS);
+        self.rank = Rank { min: 1, max: self.bars.len().max(1) };
+    }
 
-        self.metadata = None;
-        self.freq_data.clear();
-        self.query_latency_ms = None;
+    /// Shows the precomputed frame for the current position. False if no frames match the query.
+    pub fn show_cached_frame(&mut self) -> bool {
+        let Some(frames) = self.frames.take() else { return false };
+        let hit = frames.matches(self.query.min, self.query.max, self.query.k);
+        if hit {
+            self.show_histogram(frames.at(self.playback.position));
+        }
+        self.frames = Some(frames);
+        hit
+    }
 
-        self.is_loading = false;
-        self.progress = 0.0;
-        self.current_block = 0;
-        self.total_blocks = 0;
-        self.error_msg = None;
-
-        self.cmd_tx.send(WorkerCommand::ClearCache).ok();
+    /// Bars within the selected rank range.
+    pub fn visible_bars(&self) -> &[(u64, u64)] {
+        let len = self.bars.len();
+        let start = self.rank.min.saturating_sub(1).min(len);
+        let end = self.rank.max.min(len).max(start);
+        &self.bars[start..end]
     }
 
     pub fn animation_progress(&self) -> f32 {
-        let range = self.max_val.saturating_sub(self.min_val).max(1) as f32;
-        let cur = self.anim_current_val.saturating_sub(self.min_val) as f32;
-        (cur / range).clamp(0.0, 1.0)
-    }
-
-    pub fn update_freq_data(&mut self, new_freq: Vec<(u64, u64)>) {
-        self.freq_data = new_freq;
-        self.top_min = 1;
-        self.top_max = self.freq_data.len().max(1);
-    }
-
-    pub fn update_freq_from_precomputed(&mut self) -> bool {
-        if let Some(ref data) = self.anim_precomputed {
-            if data.min_val == self.min_val && data.max_val == self.max_val && data.k == self.k {
-                let frame_idx = if data.step_size > 0 {
-                    ((self.anim_current_val.saturating_sub(data.min_val)) / data.step_size) as usize
-                } else {
-                    0
-                };
-                let frame_idx = frame_idx.min(data.total_frames.saturating_sub(1));
-
-                let hist = &data.prefix_sums[frame_idx];
-                let mut freq_vec: Vec<(u64, u64)> = hist
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(gap, &count)| if count > 0 { Some((gap as u64, count)) } else { None })
-                    .collect();
-
-                let limit_top_n = self.top_max.max(1000);
-                match self.sort_by {
-                    SortOrder::ByFrequency => {
-                        freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
-                        freq_vec.truncate(limit_top_n);
-                    }
-                    SortOrder::ByGapSize => {
-                        freq_vec.sort_by(|a, b| b.1.cmp(&a.1));
-                        freq_vec.truncate(limit_top_n);
-                        freq_vec.sort_by_key(|&(g, _)| g);
-                    }
-                }
-
-                self.freq_data = freq_vec;
-                self.top_min = 1;
-                self.top_max = self.freq_data.len().max(1);
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Recalculates animation step size dynamically based on prime index range (targeting ~300 frames).
-    pub fn recalculate_anim_step(&mut self) {
-        let range = self.max_val.saturating_sub(self.min_val);
-        self.anim_step_size = (range / 300).max(1);
-    }
-
-    pub fn recalculate_dynamic_step(&mut self) {
-        self.recalculate_anim_step();
-    }
-
-    pub fn recalculate_anim_300_frames(&mut self) {
-        self.recalculate_anim_step();
-    }
-
-    /// Sets the maximum prime index limit and updates the active computation range to span [1, limit].
-    pub fn set_max_prime_limit(&mut self, new_limit: u64) {
-        let clamped_limit = new_limit.clamp(1_000_000, 100_000_000_000);
-        self.max_prime_limit = clamped_limit;
-        self.max_val = clamped_limit;
-        if self.min_val > self.max_val {
-            self.min_val = 1;
-        }
-        self.anim_precomputed = None;
-        self.recalculate_dynamic_step();
-    }
-
-    /// Returns true if animation playback is actively running or frames are currently being precached.
-    pub fn is_animation_running(&self) -> bool {
-        self.is_animating || self.is_precaching
+        self.playback.progress(self.query.min, self.query.max)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossbeam_channel::unbounded;
-
-    #[test]
-    fn test_theme_mode_default_is_light() {
-        assert_eq!(ThemeMode::default(), ThemeMode::Light);
-    }
+    use crate::gui::prefs::ThemeMode;
 
     #[test]
     fn test_app_state_initializes_in_light_mode() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let state = AppState::new(cmd_tx, res_rx);
-        assert_eq!(state.theme_mode, ThemeMode::Light);
-    }
-
-    #[test]
-    fn test_theme_mode_toggle() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
-        assert_eq!(state.theme_mode, ThemeMode::Light);
-
-        state.theme_mode = ThemeMode::Dark;
-        assert_eq!(state.theme_mode, ThemeMode::Dark);
-
-        // Reset preserves user theme preference
-        state.reset();
-        assert_eq!(state.theme_mode, ThemeMode::Dark);
-    }
-
-    #[test]
-    fn test_app_state_show_bar_tooltip_default_and_toggle() {
-        let (cmd_tx, _) = crossbeam_channel::unbounded();
-        let (_, res_rx) = crossbeam_channel::unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
-
-        // Default should be false
-        assert!(!state.show_bar_tooltip);
-
-        // Can toggle on and off
-        state.show_bar_tooltip = true;
-        assert!(state.show_bar_tooltip);
-
-        state.show_bar_tooltip = false;
-        assert!(!state.show_bar_tooltip);
+        assert_eq!(AppState::default().prefs.theme, ThemeMode::Light);
     }
 
     #[test]
     fn test_default_range_matches_max_prime_limit() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let state = AppState::new(cmd_tx, res_rx);
-        assert_eq!(state.min_val, 1);
-        assert_eq!(state.max_val, state.max_prime_limit);
-        assert_eq!(state.max_val, 10_000_000);
+        let state = AppState::default();
+        assert_eq!(state.query.min, 1);
+        assert_eq!(state.query.max, state.prefs.max_prime_limit);
+        assert_eq!(state.query.max, 10_000_000);
     }
 
     #[test]
-    fn test_reset_restores_max_val_to_max_prime_limit() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
-        state.max_val = 500_000;
+    fn test_reset_preserves_prefs_and_restores_range() {
+        let mut state = AppState::default();
+        state.prefs.theme = ThemeMode::Dark;
+        state.prefs.show_bar_tooltip = true;
+        state.query.max = 500_000;
+        state.selected_gap = Some(6);
         state.reset();
-        assert_eq!(state.max_val, state.max_prime_limit);
-        assert_eq!(state.max_val, 10_000_000);
+        assert_eq!(state.prefs.theme, ThemeMode::Dark);
+        assert!(state.prefs.show_bar_tooltip);
+        assert_eq!(state.query.max, 10_000_000);
+        assert_eq!(state.selected_gap, None);
     }
 
     #[test]
     fn test_set_max_prime_limit_updates_range_and_steps() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
+        let mut state = AppState::default();
         state.set_max_prime_limit(100_000_000);
-        assert_eq!(state.max_prime_limit, 100_000_000);
-        assert_eq!(state.max_val, 100_000_000);
-        assert_eq!(state.anim_step_size, (100_000_000 - 1) / 300);
+        assert_eq!(state.prefs.max_prime_limit, 100_000_000);
+        assert_eq!(state.query.max, 100_000_000);
+        assert_eq!(state.query.step(), (100_000_000 - 1) / 300);
+        state.set_max_prime_limit(5);
+        assert_eq!(state.query.max, MIN_LIMIT);
     }
 
     #[test]
-    fn test_is_animation_running_states() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
-
-        // Initially idle
-        assert!(!state.is_animation_running());
-
-        // Precaching
-        state.is_precaching = true;
-        assert!(state.is_animation_running());
-
-        // Animating
-        state.is_precaching = false;
-        state.is_animating = true;
-        assert!(state.is_animation_running());
-
-        // Paused or stopped
-        state.is_animating = false;
-        assert!(!state.is_animation_running());
+    fn test_show_histogram_and_visible_bars() {
+        let mut state = AppState::default();
+        state.show_histogram(&[0, 1, 5, 0, 3]);
+        assert_eq!(state.bars, vec![(1, 1), (2, 5), (4, 3)]);
+        assert_eq!(state.rank, Rank { min: 1, max: 3 });
+        state.rank = Rank { min: 2, max: 9 };
+        assert_eq!(state.visible_bars(), &[(2, 5), (4, 3)]);
     }
 
     #[test]
-    fn test_animation_progress_calculation() {
-        let (cmd_tx, _cmd_rx) = unbounded();
-        let (_res_tx, res_rx) = unbounded();
-        let mut state = AppState::new(cmd_tx, res_rx);
-
-        state.min_val = 100;
-        state.max_val = 200;
-        state.anim_current_val = 100;
-        assert!((state.animation_progress() - 0.0).abs() < 1e-5);
-
-        state.anim_current_val = 150;
-        assert!((state.animation_progress() - 0.5).abs() < 1e-5);
-
-        state.anim_current_val = 200;
-        assert!((state.animation_progress() - 1.0).abs() < 1e-5);
+    fn test_show_cached_frame_requires_matching_query() {
+        let mut state = AppState::default();
+        assert!(!state.show_cached_frame());
+        state.query = Query { k: 1, min: 1, max: 1_000 };
+        state.frames = FrameSet::build(1, 1_000, 1, 10, |_| true);
+        state.playback.position = 1_000;
+        assert!(state.show_cached_frame());
+        assert_eq!(state.bars.iter().map(|b| b.1).sum::<u64>(), 1_000);
+        state.query.k = 2;
+        assert!(!state.show_cached_frame());
     }
 }
-

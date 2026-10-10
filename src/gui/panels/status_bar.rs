@@ -1,71 +1,70 @@
-// ============================================================================
-// Status Bar Panel Component
-// ============================================================================
+//! Bottom status bar: engine, current range/mode, latency, progress.
 
-use crate::gui::state::{AppState, PlayDirection};
-use crate::gui::utils::format_compact_num;
+use egui::{ProgressBar, Ui};
 
-/// Renders the bottom telemetry status bar showing engine state, index range, latency, and progress.
-pub fn render(ui: &mut egui::Ui, state: &AppState) {
+use crate::gui::format::compact;
+use crate::gui::playback::{Direction, Mode};
+use crate::gui::state::AppState;
+
+pub fn render(ui: &mut Ui, state: &AppState) {
     ui.horizontal(|ui| {
         ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
         ui.separator();
-
-        if state.is_precaching {
-            let pct = (state.progress * 100.0) as u32;
-            let block_info = if state.total_blocks > 0 {
-                format!(" [Block {}/{}]", state.current_block, state.total_blocks)
-            } else {
-                String::new()
-            };
-            ui.label(format!(
-                "⚡ PRE-CACHING ({pct}%{}): n = {} ~ {} for 0-delay playback...",
-                block_info,
-                format_compact_num(state.min_val),
-                format_compact_num(state.max_val)
-            ));
-        } else if state.is_animating {
-            let dir_str = match state.anim_direction {
-                PlayDirection::Forward => "▶ FORWARD",
-                PlayDirection::Reverse => "◀ REVERSE",
-            };
-            ui.label(format!(
-                "🎬 ANIMATING ({}): n = {} ~ {} (Bound: n = {})",
-                dir_str,
-                format_compact_num(state.min_val),
-                format_compact_num(state.max_val),
-                format_compact_num(state.anim_current_val)
-            ));
-        } else {
-            ui.label(format!(
-                "📊 Prime Index Range: n = {} ~ {} (k={}, Rank={}~{})",
-                format_compact_num(state.min_val),
-                format_compact_num(state.max_val),
-                state.k,
-                state.top_min,
-                state.top_max
-            ));
-        }
-
+        ui.label(summary(state));
         ui.separator();
-        let latency_str = state
-            .query_latency_ms
-            .map(|ms| format!("{:.1} ms", ms))
-            .unwrap_or_else(|| "-- ms".to_string());
-        ui.label(format!("⚡ Latency: {}", latency_str));
 
+        let latency = state.latency_ms.map_or("-- ms".into(), |ms| format!("{ms:.1} ms"));
+        ui.label(format!("⚡ Latency: {latency}"));
         ui.separator();
-        if state.is_animating {
-            let anim_prog = state.animation_progress();
-            ui.add_sized(
-                [90.0_f32, 16.0_f32],
-                egui::ProgressBar::new(anim_prog).show_percentage(),
-            );
-        } else if state.is_loading || state.is_precaching {
-            ui.add_sized(
-                [90.0_f32, 16.0_f32],
-                egui::ProgressBar::new(state.progress).show_percentage(),
-            );
+
+        let fraction = match (state.playback.mode, state.progress) {
+            (Mode::Playing, _) => Some(state.animation_progress()),
+            (Mode::Precaching, p) => Some(p.map_or(0.0, |p| p.done as f32 / p.total as f32)),
+            (Mode::Stopped, _) => None,
+        };
+        if let Some(fraction) = fraction {
+            ui.add_sized([90.0, 16.0], ProgressBar::new(fraction).show_percentage());
         }
     });
+}
+
+/// One-line description of what is being shown.
+pub fn summary(state: &AppState) -> String {
+    let (q, p) = (&state.query, &state.playback);
+    let range = format!("n = {} ~ {}", compact(q.min), compact(q.max));
+    match p.mode {
+        Mode::Precaching => {
+            let (pct, blocks) = match state.progress {
+                Some(pr) => (pr.done * 100 / pr.total, format!(" [Block {}/{}]", pr.done, pr.total)),
+                None => (0, String::new()),
+            };
+            format!("⚡ PRE-CACHING ({pct}%{blocks}): {range} for 0-delay playback...")
+        }
+        Mode::Playing => {
+            let dir = match p.direction {
+                Direction::Forward => "▶ FORWARD",
+                Direction::Reverse => "◀ REVERSE",
+            };
+            format!("🎬 ANIMATING ({dir}): {range} (Bound: n = {})", compact(p.position))
+        }
+        Mode::Stopped => {
+            let r = &state.rank;
+            format!("📊 Prime Index Range: {range} (k={}, Rank={}~{})", q.k, r.min, r.max)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_summary_per_mode() {
+        let mut state = AppState::default();
+        assert!(summary(&state).starts_with("📊 Prime Index Range: n = 1 ~ 10.00 M (k=2"));
+        state.playback.mode = Mode::Playing;
+        assert!(summary(&state).contains("▶ FORWARD"));
+        state.playback.mode = Mode::Precaching;
+        assert!(summary(&state).starts_with("⚡ PRE-CACHING (0%)"));
+    }
 }

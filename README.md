@@ -33,30 +33,32 @@ jumpchamp/
 │   ├── lib.rs                   # Library root — declares all domain layers
 │   ├── main.rs                  # Primary GUI application entry point
 │   ├── sieve/
-│   │   ├── mod.rs               # Re-exports basic, parallel, stream
-│   │   ├── basic.rs             # small_primes, sieve_segment (bitpacked odd-only sieve)
+│   │   ├── mod.rs               # Re-exports wheel, parallel, stream
+│   │   ├── wheel.rs             # small_primes, sieve_segment (bitpacked wheel-of-30 sieve)
 │   │   ├── parallel.rs          # sieve_range_parallel (Rayon L1-cache bitmask dispatcher)
-│   │   └── stream.rs            # stream_prime_blocks_range (lazy block iterator)
+│   │   └── stream.rs            # prime_blocks_up_to, stream_prime_blocks_range, nth_prime_upper_bound
 │   ├── analysis/
 │   │   ├── mod.rs               # Re-exports gaps, report
 │   │   ├── gaps.rs              # apply_interval, k_step_gaps, record_gaps, count_residues
 │   │   └── report.rs            # format_report, format_record_gaps_report, format_residue_report
+│   ├── engine/
+│   │   ├── mod.rs               # Pure GUI-free computation engine root
+│   │   ├── histogram.rs         # Pure histogram operations and top_gaps sorting
+│   │   ├── scan.rs              # Unified prime walk with progress and cancellation
+│   │   ├── range.rs             # Range histogram queries and ChunkCache
+│   │   └── frames.rs            # FrameSet precomputation for animations
 │   ├── gui/
 │   │   ├── mod.rs               # GUI domain root
-│   │   ├── animation.rs         # Animation state transitions & step dispatching
+│   │   ├── actions.rs           # Pure action dispatcher and event loop
 │   │   ├── app.rs               # eframe::App window shell & update loop
-│   │   ├── state.rs             # AppState, WorkerCommand, WorkerResult
-│   │   ├── theme.rs             # Viridis dark & light theme palettes
-│   │   ├── utils.rs             # Formatting utilities (numbers, thousands)
-│   │   ├── worker/
-│   │   │   ├── mod.rs           # Worker module root (re-exports spawn_worker)
-│   │   │   ├── dispatch.rs      # Non-blocking background worker thread & command loop
-│   │   │   └── engine.rs        # Sieve math, segment histogram caching & bounds calculation
-│   │   └── panels/
-│   │       ├── chart.rs         # Interactive egui_plot normalized histogram & heatmap meter
-│   │       ├── settings.rs      # Modal settings & theme preferences window
-│   │       ├── status_bar.rs    # Bottom telemetry status bar component
-│   │       └── sidebar/         # Top dual-thumb range sliders & toolbars
+│   │   ├── format.rs            # Formatting utilities (compact, thousands)
+│   │   ├── playback.rs          # Pure playback state machine
+│   │   ├── prefs.rs             # User preferences (theme, limits, toggles)
+│   │   ├── state.rs             # AppState, Query, Rank
+│   │   ├── theme.rs             # Unified Palette definition & Viridis colormap
+│   │   ├── worker.rs            # Non-blocking background worker with epoch-based cancellation
+│   │   ├── widgets/             # Reusable UI widgets (dual-thumb range slider, index input)
+│   │   └── panels/              # Composable UI panels (chart, playback_bar, settings, status_bar, toolbar)
 │   └── bin/
 │       └── jumpchamp_gui.rs     # Native desktop GUI entry point binary
 ├── .gitignore                   # Ignores /target build artifacts
@@ -67,9 +69,10 @@ Each domain layer is independently readable and testable:
 
 | Layer | Modules | Responsibility | External Deps |
 |---|---|---|---|
-| `sieve/` | `basic`, `parallel`, `stream` | Bitpacked odd-only prime generation | `rayon` |
-| `analysis/` | `gaps`, `report` | Gap analysis, Cramér ratios, residues & report formatting | none |
-| `gui/` | `app`, `state`, `worker`, `theme`, `panels` | Native desktop interface & virtualized rendering | `egui`, `eframe`, `egui_plot`, `crossbeam-channel` |
+| `sieve/` | `wheel`, `parallel`, `stream` | Bitpacked wheel-of-30 prime generation & bounds | `rayon` |
+| `analysis/` | `gaps`, `report` | Pure gap combinators, Cramér ratios & text reports | none |
+| `engine/` | `histogram`, `scan`, `range`, `frames` | Gap histograms, chunk caching & animation frames | `sieve`, `analysis` |
+| `gui/` | `state`, `worker`, `actions`, `panels`, `widgets` | Native desktop interface & virtualized rendering | `egui`, `eframe`, `egui_plot`, `crossbeam-channel` |
 
 ---
 

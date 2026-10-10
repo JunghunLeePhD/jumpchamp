@@ -1,11 +1,12 @@
-// ============================================================================
-// GUI Domain Root — Re-exports all GUI submodules
-// ============================================================================
+//! GUI Domain Root.
 
-pub mod animation;
+pub mod actions;
 pub mod app;
+pub mod format;
 pub mod panels;
+pub mod playback;
+pub mod prefs;
 pub mod state;
 pub mod theme;
-pub mod utils;
+pub mod widgets;
 pub mod worker;
