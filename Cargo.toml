@@ -1,6 +1,6 @@
 [package]
 name = "jumpchamp"
-version = "0.1.0"
+version = "1.0.1"
 edition = "2021"
 default-run = "jumpchamp"   # cargo run -> Native Desktop GUI (src/main.rs)
 
@@ -26,7 +26,7 @@ icon = [
     "assets/JumpChamp.icns",
     "assets/icon.icns"
 ]
-version = "0.1.0"
+version = "1.0.1"
 copyright = "Copyright (c) 2026"
 short_description = "JumpChamp Prime Gap Explorer"
 long_description = "Interactive desktop application for exploring prime gap distributions."
@@ -42,7 +42,7 @@ icon = [
     "assets/JumpChamp.icns",
     "assets/icon.icns"
 ]
-version = "0.1.0"
+version = "1.0.1"
 copyright = "Copyright (c) 2026"
 short_description = "JumpChamp Prime Gap Explorer"
 long_description = "Interactive desktop application for exploring prime gap distributions."
@@ -58,7 +58,7 @@ icon = [
     "assets/JumpChamp.icns",
     "assets/icon.icns"
 ]
-version = "0.1.0"
+version = "1.0.1"
 copyright = "Copyright (c) 2026"
 short_description = "JumpChamp Prime Gap Explorer"
 long_description = "Interactive desktop application for exploring prime gap distributions."
