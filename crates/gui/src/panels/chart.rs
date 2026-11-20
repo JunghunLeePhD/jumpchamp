@@ -1,10 +1,51 @@
 //! Interactive Chart Panel — [0, 1] Normalized Bar Heights, Focus Lock & Hover.
 
 use egui_plot::{Bar, BarChart, Line, Plot, PlotPoint, Text};
+use jumpchamp_core::analysis::{
+    format_prime_factorization, format_primorial_multiple, is_primorial, PRIMORIALS,
+};
 
 use crate::format::{compact, thousands};
 use crate::state::AppState;
 use crate::theme::{self, Palette};
+
+/// Ranked gap summary entry for the Top-5 Ranking Board HUD.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RankedGap {
+    pub rank: usize,
+    pub gap: u64,
+    pub count: u64,
+    pub pct: f64,
+    pub factorization: String,
+    pub primorial_tag: Option<String>,
+    pub is_exact_primorial: bool,
+}
+
+/// Computes up to the top 5 gaps by frequency count (ties broken by smaller gap).
+pub fn top5_ranked_gaps(display_data: &[(u64, u64)], total_count: u64) -> Vec<RankedGap> {
+    let mut ranked: Vec<(u64, u64)> = display_data
+        .iter()
+        .copied()
+        .filter(|&(_, count)| count > 0)
+        .collect();
+    ranked.sort_by_key(|&(gap, count)| (std::cmp::Reverse(count), gap));
+    ranked.truncate(5);
+
+    let total_f64 = total_count.max(1) as f64;
+    ranked
+        .into_iter()
+        .enumerate()
+        .map(|(i, (gap, count))| RankedGap {
+            rank: i + 1,
+            gap,
+            count,
+            pct: (count as f64 / total_f64) * 100.0,
+            factorization: format_prime_factorization(gap),
+            primorial_tag: format_primorial_multiple(gap),
+            is_exact_primorial: is_primorial(gap).is_some(),
+        })
+        .collect()
+}
 
 /// Finds the top 5 gap indices by frequency count in a single O(N) pass with zero heap allocations.
 /// Returns an array of `(bar_index, count)` sorted in descending order of count.
@@ -294,6 +335,16 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
                                             .size(14.0)
                                             .color(palette.text_dim),
                                         );
+                                        let factors = format_prime_factorization(gap);
+                                        let factor_line = match format_primorial_multiple(gap) {
+                                            Some(tag) => format!("Factors: {factors} ({tag})"),
+                                            None => format!("Factors: {factors}"),
+                                        };
+                                        ui.label(
+                                            egui::RichText::new(factor_line)
+                                                .size(13.0)
+                                                .color(palette.text_dim),
+                                        );
                                         ui.add_space(2.0);
                                         ui.label(
                                             egui::RichText::new("Click to lock focus")
@@ -351,8 +402,26 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
                                     .color(palette.text_dim),
                             );
                         });
+                        let factors = format_prime_factorization(pinned_gap);
+                        let factor_line = match format_primorial_multiple(pinned_gap) {
+                            Some(tag) => format!("Factors: {factors} ({tag})"),
+                            None => format!("Factors: {factors}"),
+                        };
+                        ui.label(
+                            egui::RichText::new(factor_line)
+                                .size(12.0)
+                                .color(palette.text_dim),
+                        );
                     });
             });
+    }
+
+    // Floating Top-5 Ranking Board & Primorial Reference HUD on the top-left side of the chart
+    if state.prefs.show_ranking_board && !display_data.is_empty() {
+        let ranked = top5_ranked_gaps(display_data, total_count);
+        if !ranked.is_empty() {
+            render_ranking_board(&ctx, state.query.k, &ranked, &mut new_selected_gap, palette);
+        }
     }
 
     // Floating Vertical Heat Map Count Meter on the top-right side of the chart canvas
@@ -439,6 +508,140 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, palette: &Palette) {
     }
 
     state.selected_gap = new_selected_gap;
+}
+
+fn render_ranking_board(
+    ctx: &egui::Context,
+    k: usize,
+    ranked: &[RankedGap],
+    selected_gap: &mut Option<u64>,
+    palette: &Palette,
+) {
+    egui::Area::new(egui::Id::new("top5_ranking_board"))
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(52.0, 92.0))
+        .interactable(true)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(palette.card_bg)
+                .stroke(egui::Stroke::new(1.0_f32, palette.card_border))
+                .rounding(6.0_f32)
+                .inner_margin(8.0_f32)
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("🏆 Top 5 Gap Ranking (Δ_{k})"))
+                            .strong()
+                            .size(13.5)
+                            .color(palette.accent),
+                    );
+                    ui.add_space(4.0);
+
+                    egui::Grid::new("top5_ranking_grid")
+                        .striped(true)
+                        .spacing([10.0, 4.0])
+                        .show(ui, |ui| {
+                            for header in ["Rank", "Gap", "Factors", "p_n#", "%", "Count"] {
+                                ui.label(
+                                    egui::RichText::new(header)
+                                        .small()
+                                        .strong()
+                                        .color(palette.text_dim),
+                                );
+                            }
+                            ui.end_row();
+
+                            for entry in ranked {
+                                let rank = entry.rank;
+                                let gap = entry.gap;
+                                let pct = entry.pct;
+                                let is_selected = *selected_gap == Some(gap);
+
+                                ui.label(
+                                    egui::RichText::new(format!("#{rank}"))
+                                        .strong()
+                                        .color(palette.rank),
+                                );
+
+                                let gap_label = if is_selected {
+                                    format!("📌 {gap}")
+                                } else {
+                                    format!("Δ = {gap}")
+                                };
+                                if ui
+                                    .selectable_label(is_selected, gap_label)
+                                    .on_hover_text("Click to lock/unlock bar focus")
+                                    .clicked()
+                                {
+                                    *selected_gap = if is_selected { None } else { Some(gap) };
+                                }
+
+                                ui.label(
+                                    egui::RichText::new(&entry.factorization)
+                                        .monospace()
+                                        .color(palette.text),
+                                );
+
+                                let (tag_text, tag_color) = match entry.primorial_tag.as_deref() {
+                                    Some(tag) if entry.is_exact_primorial => (tag, palette.rank),
+                                    Some(tag) => (tag, palette.accent),
+                                    None => ("—", palette.text_dim),
+                                };
+                                ui.label(egui::RichText::new(tag_text).strong().color(tag_color));
+
+                                ui.label(
+                                    egui::RichText::new(format!("{pct:.2}%")).color(palette.text),
+                                );
+
+                                ui.label(
+                                    egui::RichText::new(compact(entry.count))
+                                        .color(palette.text_dim),
+                                )
+                                .on_hover_text(thousands(entry.count));
+
+                                ui.end_row();
+                            }
+                        });
+
+                    ui.add_space(4.0);
+                    ui.separator();
+                    ui.add_space(2.0);
+
+                    ui.label(
+                        egui::RichText::new("📐 Primorials (p_n#)")
+                            .strong()
+                            .size(12.5)
+                            .color(palette.accent),
+                    );
+                    ui.add_space(2.0);
+
+                    egui::Grid::new("primorial_ref_grid")
+                        .spacing([10.0, 2.0])
+                        .show(ui, |ui| {
+                            for (idx, p) in PRIMORIALS.iter().enumerate() {
+                                let in_top5 = ranked.iter().any(|r| r.gap == p.value);
+                                let is_sel = *selected_gap == Some(p.value);
+                                let color = if is_sel {
+                                    palette.highlight
+                                } else if in_top5 {
+                                    palette.rank
+                                } else {
+                                    palette.text_dim
+                                };
+                                let label = format!("{} = {}", p.label, thousands(p.value));
+                                let factors = format_prime_factorization(p.value);
+                                let mut rt = egui::RichText::new(label).small().color(color);
+                                if in_top5 || is_sel {
+                                    rt = rt.strong();
+                                }
+                                ui.label(rt)
+                                    .on_hover_text(format!("{} = {factors}", p.label));
+
+                                if idx % 3 == 2 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                });
+        });
 }
 
 fn sub_rect_painter(
@@ -552,5 +755,48 @@ mod tests {
         assert!(is_top5(&top5, data.len(), 3));
         assert!(is_top5(&top5, data.len(), 4));
         assert!(!is_top5(&top5, data.len(), 5));
+    }
+
+    #[test]
+    fn test_top5_ranked_gaps_ordering_and_factorization() {
+        let data = vec![
+            (2, 100),
+            (4, 100),
+            (6, 500),
+            (12, 350),
+            (18, 50),
+            (30, 250),
+            (42, 20),
+        ];
+        let total: u64 = data.iter().map(|&(_, c)| c).sum();
+        let ranked = top5_ranked_gaps(&data, total);
+
+        assert_eq!(ranked.len(), 5);
+        assert_eq!(ranked[0].rank, 1);
+        assert_eq!(ranked[0].gap, 6);
+        assert_eq!(ranked[0].factorization, "2 · 3");
+        assert_eq!(ranked[0].primorial_tag.as_deref(), Some("3#"));
+        assert!(ranked[0].is_exact_primorial);
+
+        assert_eq!(ranked[1].rank, 2);
+        assert_eq!(ranked[1].gap, 12);
+        assert_eq!(ranked[1].factorization, "2^2 · 3");
+        assert_eq!(ranked[1].primorial_tag.as_deref(), Some("2·3#"));
+        assert!(!ranked[1].is_exact_primorial);
+
+        assert_eq!(ranked[2].rank, 3);
+        assert_eq!(ranked[2].gap, 30);
+        assert_eq!(ranked[2].factorization, "2 · 3 · 5");
+        assert_eq!(ranked[2].primorial_tag.as_deref(), Some("5#"));
+        assert!(ranked[2].is_exact_primorial);
+
+        // Count tie (100) breaks toward smaller gap first: 2 before 4.
+        assert_eq!(ranked[3].rank, 4);
+        assert_eq!(ranked[3].gap, 2);
+        assert_eq!(ranked[4].rank, 5);
+        assert_eq!(ranked[4].gap, 4);
+
+        let expected_pct0 = (500.0 / total as f64) * 100.0;
+        assert!((ranked[0].pct - expected_pct0).abs() < 1e-9);
     }
 }
