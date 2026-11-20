@@ -17,7 +17,7 @@ Built with a functional programming architecture, cache-aligned multi-threading 
 
 * **Parallel Bitpacked Segmented Sieve Fallback**: Uses Rayon over 64-bit wheel-of-30 segments fitting 262,144 candidates in L1 cache for live out-of-the-box exploration without pre-generated binary files.
 
-* **Non-blocking Background Worker**: Background worker threads communicate over `crossbeam-channel` with epoch-based cooperative cancellation, keeping the UI locked at 60 FPS.
+* **Non-blocking Background Worker & Instant Reset**: Background worker threads communicate over `crossbeam-channel` with epoch-synchronized `CancelToken` polling at sieve segment, engine scan, and mmap query boundaries, keeping the UI locked at 60 FPS and allowing instant cancellation mid-computation.
 
 * **Advanced Mathematical Analytics**:
   * **Record Gap Tracking**: Computes maximal record-breaking prime gaps $\Delta(n)$ and Cramér Ratios $C(n) = \frac{\Delta(n)}{(\ln p_n)^2}$.
@@ -38,6 +38,7 @@ jumpchamp/
 │   ├── core/                    # jumpchamp-core: Headless engine & zero-copy storage
 │   │   └── src/
 │   │       ├── lib.rs           # Crate root — declares all core domain layers
+│   │       ├── cancel.rs        # Cooperative atomic CancelToken for instant abort
 │   │       ├── bin/
 │   │       │   ├── generate_gaps.rs    # Offline prime sieve -> raw u16 gaps.bin CLI
 │   │       │   └── generate_index.rs   # Offline gaps.bin -> block_index.bin CLI
@@ -56,7 +57,7 @@ jumpchamp/
 │           ├── prefs.rs         # User preferences (theme, chart view, paths, limits)
 │           ├── state.rs         # AppState, Query, Rank, DatasetMeta
 │           ├── theme.rs         # Unified Palette definition & Viridis colormap
-│           ├── worker.rs        # Background worker with epoch cancellation & mmap queries
+│           ├── worker.rs        # Background worker with CancelToken, epoch cancellation & mmap queries
 │           ├── widgets/         # Reusable UI widgets (dual-thumb range slider, index input)
 │           └── panels/          # Composable UI panels (chart, heatmap, playback_bar, settings, status_bar, toolbar)
 ├── scripts/
@@ -68,6 +69,7 @@ Each domain layer is independently readable and testable:
 
 | Layer | Modules | Responsibility | External Deps |
 |---|---|---|---|
+| `cancel` | `CancelToken` | Lock-free atomic cooperative cancellation token | none |
 | `sieve/` | `wheel`, `parallel`, `stream` | Bitpacked wheel-of-30 prime generation & bounds | `rayon` |
 | `analysis/` | `gaps`, `report` | Pure gap combinators, Cramér ratios & text reports | none |
 | `engine/` | `histogram`, `scan`, `range`, `frames` | Gap histograms, chunk caching & animation frames | `sieve`, `analysis` |
@@ -146,7 +148,7 @@ brew install --cask JunghunLeePhD/tap/jumpchamp
 - **Toolbar & View Modes**: Switch seamlessly between **📊 Bars** (`egui_plot::BarChart`), **🌈 Heatmap** (2D `egui::ColorImage` spectral density across prime-index scales), and **⊞ Split** view with synchronized gap focus lock.
 - **37.6B Prime Range Navigation**: Dual-thumb range sliders and compact index inputs supporting scales from `10M` up to `37.6B` ($\pi(10^{12})$) and `100B`.
 - **Two-Tier Mmap + Sieve Engine**: Instant microsecond queries via `block_index.bin`, dynamic sliding-window $k$-step gaps via `gaps.bin`, and automatic fallback to the L1-cache parallel segmented sieve when no files are mounted.
-- **Non-blocking Execution**: Background worker channels and epoch cancellation prevent UI freezes during panning, range scrubbing, or animation precaching.
+- **Non-blocking Execution & Instant Reset**: Background worker channels, `CancelToken` polling across sieve/engine/mmap loops, and an always-enabled Reset button abort heavy runs mid-computation without UI freezes.
 
 ---
 
@@ -179,7 +181,7 @@ JumpChamp is organized as a Cargo multi-crate workspace separating the pure comp
 - **Zero-UI Core Engine**: `jumpchamp-core` has zero GUI dependencies (`rayon` only), compiles in <1 second, and can be embedded in CLIs, servers, or web services.
 - **Pure Functions**: `small_primes` and `sieve_segment` are pure and free of side-effects, making them testable without external state.
 - **Lazy Evaluation**: `stream_prime_blocks_range` streams blocks lazily, keeping memory bounded regardless of total primes generated.
-- **Decoupled Worker Architecture**: The GUI main thread handles event loop rendering at 60 FPS while the computation worker executes in a separate thread communicating over crossbeam channels with epoch-based cooperative cancellation.
+- **Decoupled Worker Architecture**: The GUI main thread handles event loop rendering at 60 FPS while the computation worker executes in a separate thread communicating over crossbeam channels with epoch-synchronized `CancelToken` cooperative cancellation.
 
 ---
 
