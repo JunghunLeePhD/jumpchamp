@@ -25,7 +25,7 @@ pub fn range_slider(
     let limit = limit.max(1);
     let (left, right) = (rect.min.x + PAD, rect.max.x - PAD);
     let span = (right - left).max(1.0);
-    let x_of = |v: u64| left + (v as f32 / limit as f32).clamp(0.0, 1.0) * span;
+    let x_of = |v: u64| left + (v as f64 / limit as f64).clamp(0.0, 1.0) as f32 * span;
 
     let enabled = ui.is_enabled();
     if enabled && response.dragged() {

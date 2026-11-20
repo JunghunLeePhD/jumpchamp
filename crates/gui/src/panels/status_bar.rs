@@ -8,15 +8,12 @@ use crate::state::AppState;
 
 pub fn render(ui: &mut Ui, state: &AppState) {
     ui.horizontal(|ui| {
-        ui.label("⚙ Engine: In-Memory Parallel Segmented Sieve");
+        ui.label(engine_label(state));
         ui.separator();
         ui.label(summary(state));
         ui.separator();
 
-        let latency = state
-            .latency_ms
-            .map_or("-- ms".into(), |ms| format!("{ms:.1} ms"));
-        ui.label(format!("⚡ Latency: {latency}"));
+        ui.label(format!("⚡ Latency: {}", format_latency(state)));
         ui.separator();
 
         let fraction = match (state.playback.mode, state.progress) {
@@ -30,6 +27,34 @@ pub fn render(ui: &mut Ui, state: &AppState) {
     });
 }
 
+pub fn engine_label(state: &AppState) -> String {
+    match &state.dataset {
+        Some(meta) => {
+            let raw = if meta.has_raw_gaps { " + Raw Gaps" } else { "" };
+            format!("⚡ Engine: Mmap Index ({} blocks{raw})", meta.block_count)
+        }
+        None => "⚙ Engine: In-Memory Parallel Segmented Sieve".to_string(),
+    }
+}
+
+pub fn format_latency(state: &AppState) -> String {
+    let base = state.latency_ms.map_or_else(
+        || "-- ms".to_string(),
+        |ms| {
+            if ms < 1.0 {
+                format!("{:.0} µs", ms * 1000.0)
+            } else {
+                format!("{ms:.1} ms")
+            }
+        },
+    );
+    if state.last_query_sampled {
+        format!("{base} (sampled)")
+    } else {
+        base
+    }
+}
+
 /// One-line description of what is being shown.
 pub fn summary(state: &AppState) -> String {
     let (q, p) = (&state.query, &state.playback);
@@ -38,7 +63,7 @@ pub fn summary(state: &AppState) -> String {
         Mode::Precaching => {
             let (pct, blocks) = match state.progress {
                 Some(pr) => (
-                    pr.done * 100 / pr.total,
+                    (pr.done * 100).checked_div(pr.total).unwrap_or(0),
                     format!(" [Block {}/{}]", pr.done, pr.total),
                 ),
                 None => (0, String::new()),
@@ -68,6 +93,7 @@ pub fn summary(state: &AppState) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::DatasetMeta;
 
     #[test]
     fn test_summary_per_mode() {
@@ -77,5 +103,30 @@ mod tests {
         assert!(summary(&state).contains("▶ FORWARD"));
         state.playback.mode = Mode::Precaching;
         assert!(summary(&state).starts_with("⚡ PRE-CACHING (0%)"));
+    }
+
+    #[test]
+    fn test_engine_label_and_microsecond_latency() {
+        let mut state = AppState::default();
+        assert_eq!(
+            engine_label(&state),
+            "⚙ Engine: In-Memory Parallel Segmented Sieve"
+        );
+        state.dataset = Some(DatasetMeta {
+            index_path: "block_index.bin".to_string(),
+            gaps_path: Some("gaps.bin".to_string()),
+            block_count: 3761,
+            block_size: 10_000_000,
+            max_primes: 37_607_912_018,
+            has_raw_gaps: true,
+            raw_gap_count: 37_607_912_018,
+        });
+        state.latency_ms = Some(0.125);
+        state.last_query_sampled = true;
+        assert_eq!(
+            engine_label(&state),
+            "⚡ Engine: Mmap Index (3761 blocks + Raw Gaps)"
+        );
+        assert_eq!(format_latency(&state), "125 µs (sampled)");
     }
 }
