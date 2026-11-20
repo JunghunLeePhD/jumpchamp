@@ -5,10 +5,14 @@ use std::path::Path;
 
 use memmap2::Mmap;
 
-use crate::engine::{frame_step, histogram, FrameSet, Histogram};
+use crate::cancel::CancelToken;
+use crate::engine::{frame_step, histogram, FrameSet, Histogram, Progress};
 
 use super::format::{BlockHistogram, StorageError, BLOCK_SIZE, HISTOGRAM_BINS};
 use super::raw::RawGaps;
+
+const RAW_SLICE_POLL_CHUNK: usize = 250_000;
+const BLOCK_POLL_STRIDE: usize = 1_024;
 
 /// Sub-millisecond gap distribution engine backed by a memory-mapped `block_index.bin`.
 #[derive(Debug)]
@@ -84,24 +88,39 @@ impl DistributionEngine {
     ///
     /// Implements `P_[A, B](g) = sum_{m = floor(A/L)}^{floor(B/L)} H_m(g)`.
     pub fn query_distribution(&self, start_idx: u64, end_idx: u64) -> [u64; HISTOGRAM_BINS] {
+        self.query_distribution_inner(start_idx, end_idx, None)
+            .unwrap_or([0u64; HISTOGRAM_BINS])
+    }
+
+    fn query_distribution_inner(
+        &self,
+        start_idx: u64,
+        end_idx: u64,
+        cancel: Option<&CancelToken>,
+    ) -> Option<[u64; HISTOGRAM_BINS]> {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return None;
+        }
         let mut totals = [0u64; HISTOGRAM_BINS];
         let blocks = self.blocks();
         if blocks.is_empty() || start_idx > end_idx {
-            return totals;
+            return Some(totals);
         }
 
         let m_start = (start_idx / self.block_size) as usize;
         if m_start >= blocks.len() {
-            return totals;
+            return Some(totals);
         }
         let m_end = ((end_idx / self.block_size) as usize).min(blocks.len() - 1);
 
-        for block in &blocks[m_start..=m_end] {
-            for (acc, &cnt) in totals.iter_mut().zip(block.counts.iter()) {
-                *acc += cnt as u64;
+        for (i, block) in blocks[m_start..=m_end].iter().enumerate() {
+            if i.is_multiple_of(BLOCK_POLL_STRIDE) && cancel.is_some_and(CancelToken::is_cancelled)
+            {
+                return None;
             }
+            add_block(&mut totals, block);
         }
-        totals
+        Some(totals)
     }
 
     /// Computes exact 1-step distribution over `[start_idx, end_idx]` (0-based inclusive).
@@ -114,17 +133,42 @@ impl DistributionEngine {
         end_idx: u64,
         raw: Option<&RawGaps>,
     ) -> [u64; HISTOGRAM_BINS] {
+        self.query_distribution_exact_inner(start_idx, end_idx, raw, None)
+            .unwrap_or([0u64; HISTOGRAM_BINS])
+    }
+
+    /// Cancellable variant of [`DistributionEngine::query_distribution_exact`].
+    pub fn query_distribution_exact_cancellable(
+        &self,
+        start_idx: u64,
+        end_idx: u64,
+        raw: Option<&RawGaps>,
+        cancel: &CancelToken,
+    ) -> Option<[u64; HISTOGRAM_BINS]> {
+        self.query_distribution_exact_inner(start_idx, end_idx, raw, Some(cancel))
+    }
+
+    fn query_distribution_exact_inner(
+        &self,
+        start_idx: u64,
+        end_idx: u64,
+        raw: Option<&RawGaps>,
+        cancel: Option<&CancelToken>,
+    ) -> Option<[u64; HISTOGRAM_BINS]> {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return None;
+        }
         let Some(raw) = raw else {
-            return self.query_distribution(start_idx, end_idx);
+            return self.query_distribution_inner(start_idx, end_idx, cancel);
         };
         let gaps = raw.as_slice();
         if gaps.is_empty() || start_idx > end_idx {
-            return [0u64; HISTOGRAM_BINS];
+            return Some([0u64; HISTOGRAM_BINS]);
         }
         let start = start_idx as usize;
         let end = (end_idx as usize).min(gaps.len() - 1);
         if start > end {
-            return [0u64; HISTOGRAM_BINS];
+            return Some([0u64; HISTOGRAM_BINS]);
         }
 
         let blocks = self.blocks();
@@ -132,36 +176,37 @@ impl DistributionEngine {
         let m_start = start / bsize;
         let m_end = end / bsize;
 
+        let mut totals = [0u64; HISTOGRAM_BINS];
         if m_start >= blocks.len() || m_end >= blocks.len() {
-            let mut totals = [0u64; HISTOGRAM_BINS];
-            for &g in &gaps[start..=end] {
-                if let Some(slot) = totals.get_mut(g as usize) {
-                    *slot += 1;
-                }
+            if !add_raw_slice_cancellable(&mut totals, &gaps[start..=end], cancel) {
+                return None;
             }
-            return totals;
+            return Some(totals);
         }
 
-        let mut totals = [0u64; HISTOGRAM_BINS];
         if m_start == m_end {
             let block_start = m_start * bsize;
             let block_end = ((m_start + 1) * bsize - 1).min(gaps.len() - 1);
             if start == block_start && end == block_end {
                 add_block(&mut totals, &blocks[m_start]);
-            } else {
-                add_raw_slice(&mut totals, &gaps[start..=end]);
+            } else if !add_raw_slice_cancellable(&mut totals, &gaps[start..=end], cancel) {
+                return None;
             }
-            return totals;
+            return Some(totals);
         }
 
         let head_end = (m_start + 1) * bsize - 1;
         if start == m_start * bsize {
             add_block(&mut totals, &blocks[m_start]);
-        } else {
-            add_raw_slice(&mut totals, &gaps[start..=head_end]);
+        } else if !add_raw_slice_cancellable(&mut totals, &gaps[start..=head_end], cancel) {
+            return None;
         }
 
-        for block in &blocks[(m_start + 1)..m_end] {
+        for (i, block) in blocks[(m_start + 1)..m_end].iter().enumerate() {
+            if i.is_multiple_of(BLOCK_POLL_STRIDE) && cancel.is_some_and(CancelToken::is_cancelled)
+            {
+                return None;
+            }
             add_block(&mut totals, block);
         }
 
@@ -169,11 +214,11 @@ impl DistributionEngine {
         let tail_full_end = ((m_end + 1) * bsize - 1).min(gaps.len() - 1);
         if end == tail_full_end {
             add_block(&mut totals, &blocks[m_end]);
-        } else {
-            add_raw_slice(&mut totals, &gaps[tail_start..=end]);
+        } else if !add_raw_slice_cancellable(&mut totals, &gaps[tail_start..=end], cancel) {
+            return None;
         }
 
-        totals
+        Some(totals)
     }
 
     /// Convenience wrapper returning `query_distribution` as a `Histogram` (`Vec<u64>`).
@@ -185,6 +230,20 @@ impl DistributionEngine {
     ///
     /// Assigns each block in the spanned range to a single frame so no block is double-counted.
     pub fn build_frames(&self, min_1based: u64, max_1based: u64, count: usize) -> FrameSet {
+        self.build_frames_inner(min_1based, max_1based, count, None)
+            .expect("uncancellable frame build cannot abort")
+    }
+
+    fn build_frames_inner(
+        &self,
+        min_1based: u64,
+        max_1based: u64,
+        count: usize,
+        cancel: Option<&CancelToken>,
+    ) -> Option<FrameSet> {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return None;
+        }
         let count = count.max(1);
         let step = frame_step(min_1based, max_1based, count);
         let mut deltas: Vec<Histogram> = vec![vec![0u64; HISTOGRAM_BINS]; count];
@@ -197,7 +256,18 @@ impl DistributionEngine {
             let m_end = ((end0 / self.block_size) as usize).min(blocks.len() - 1);
 
             if m_start < blocks.len() && m_start <= m_end {
-                for (m, block) in blocks.iter().enumerate().take(m_end + 1).skip(m_start) {
+                for (i, (m, block)) in blocks
+                    .iter()
+                    .enumerate()
+                    .take(m_end + 1)
+                    .skip(m_start)
+                    .enumerate()
+                {
+                    if i.is_multiple_of(BLOCK_POLL_STRIDE)
+                        && cancel.is_some_and(CancelToken::is_cancelled)
+                    {
+                        return None;
+                    }
                     let b_start_1 = (m as u64) * self.block_size + 1;
                     let frame = ((b_start_1.saturating_sub(min_1based)) / step) as usize;
                     let target = &mut deltas[frame.min(count - 1)];
@@ -208,7 +278,7 @@ impl DistributionEngine {
             }
         }
 
-        FrameSet::from_deltas(min_1based, max_1based, 1, &deltas)
+        Some(FrameSet::from_deltas(min_1based, max_1based, 1, &deltas))
     }
 
     /// Builds `count` exact cumulative frames using `raw` when available for sub-block precision.
@@ -219,13 +289,45 @@ impl DistributionEngine {
         count: usize,
         raw: Option<&RawGaps>,
     ) -> FrameSet {
+        self.build_frames_exact_cancellable(
+            min_1based,
+            max_1based,
+            count,
+            raw,
+            &CancelToken::new(),
+            |_| true,
+        )
+        .expect("uncancellable frame build cannot abort")
+    }
+
+    /// Cancellable variant of [`DistributionEngine::build_frames_exact`].
+    pub fn build_frames_exact_cancellable(
+        &self,
+        min_1based: u64,
+        max_1based: u64,
+        count: usize,
+        raw: Option<&RawGaps>,
+        cancel: &CancelToken,
+        mut on_frame: impl FnMut(Progress) -> bool,
+    ) -> Option<FrameSet> {
+        if cancel.is_cancelled() {
+            return None;
+        }
         let Some(raw) = raw else {
-            return self.build_frames(min_1based, max_1based, count);
+            return self.build_frames_inner(min_1based, max_1based, count, Some(cancel));
         };
         let count = count.max(1);
         let step = frame_step(min_1based, max_1based, count);
         let mut deltas = Vec::with_capacity(count);
         for i in 0..count {
+            if cancel.is_cancelled()
+                || !on_frame(Progress {
+                    done: i + 1,
+                    total: count,
+                })
+            {
+                return None;
+            }
             let f_start = min_1based + i as u64 * step;
             let f_end = if i + 1 == count {
                 max_1based
@@ -233,17 +335,18 @@ impl DistributionEngine {
                 (f_start + step - 1).min(max_1based)
             };
             if f_start <= f_end && f_start <= max_1based {
-                let dist = self.query_distribution_exact(
+                let dist = self.query_distribution_exact_cancellable(
                     f_start.saturating_sub(1),
                     f_end.saturating_sub(1),
                     Some(raw),
-                );
+                    cancel,
+                )?;
                 deltas.push(histogram::trimmed(&dist));
             } else {
                 deltas.push(Vec::new());
             }
         }
-        FrameSet::from_deltas(min_1based, max_1based, 1, &deltas)
+        Some(FrameSet::from_deltas(min_1based, max_1based, 1, &deltas))
     }
 }
 
@@ -251,6 +354,20 @@ fn add_block(totals: &mut [u64; HISTOGRAM_BINS], block: &BlockHistogram) {
     for (acc, &cnt) in totals.iter_mut().zip(block.counts.iter()) {
         *acc += cnt as u64;
     }
+}
+
+fn add_raw_slice_cancellable(
+    totals: &mut [u64; HISTOGRAM_BINS],
+    slice: &[u16],
+    cancel: Option<&CancelToken>,
+) -> bool {
+    for chunk in slice.chunks(RAW_SLICE_POLL_CHUNK) {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return false;
+        }
+        add_raw_slice(totals, chunk);
+    }
+    !cancel.is_some_and(CancelToken::is_cancelled)
 }
 
 fn add_raw_slice(totals: &mut [u64; HISTOGRAM_BINS], slice: &[u16]) {
@@ -316,6 +433,19 @@ mod tests {
 
         let exact_frames = engine.build_frames_exact(1, 25, 5, Some(&raw));
         assert_eq!(exact_frames.at(25).iter().sum::<u64>(), 25);
+
+        let cancel = CancelToken::new();
+        assert_eq!(
+            engine.query_distribution_exact_cancellable(3, 22, Some(&raw), &cancel),
+            Some(expected)
+        );
+        cancel.cancel();
+        assert!(engine
+            .query_distribution_exact_cancellable(3, 22, Some(&raw), &cancel)
+            .is_none());
+        assert!(engine
+            .build_frames_exact_cancellable(1, 25, 5, Some(&raw), &cancel, |_| true)
+            .is_none());
 
         let _ = std::fs::remove_file(&gaps_path);
         let _ = std::fs::remove_file(&idx_path);

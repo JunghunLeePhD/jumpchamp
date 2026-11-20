@@ -15,7 +15,8 @@ pub mod storage;
 pub use analysis::{count_residues, gap_transition_matrix, k_step_gaps, record_gaps};
 pub use cancel::CancelToken;
 pub use engine::{
-    frame_step, range_histogram, top_gaps, ChunkCache, FrameSet, Histogram, Progress,
+    frame_step, range_histogram, range_histogram_cancellable, scan_k_gaps_cancellable, top_gaps,
+    ChunkCache, FrameSet, Histogram, Progress,
 };
 pub use sieve::{
     nth_prime_upper_bound, prime_blocks_up_to, prime_blocks_up_to_cancellable,

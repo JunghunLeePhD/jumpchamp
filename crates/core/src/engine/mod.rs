@@ -10,5 +10,5 @@ pub mod scan;
 
 pub use frames::{frame_step, FrameSet};
 pub use histogram::{top_gaps, Histogram, MAX_GAP};
-pub use range::{range_histogram, ChunkCache};
-pub use scan::{scan_k_gaps, Progress};
+pub use range::{range_histogram, range_histogram_cancellable, ChunkCache};
+pub use scan::{scan_k_gaps, scan_k_gaps_cancellable, Progress};

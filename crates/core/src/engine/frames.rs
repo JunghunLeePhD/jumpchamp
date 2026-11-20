@@ -1,7 +1,9 @@
 //! Precomputed animation frames: cumulative gap histograms over a growing index range.
 
+use crate::cancel::CancelToken;
+
 use super::histogram::{self, Histogram};
-use super::scan::{scan_k_gaps, Progress};
+use super::scan::{scan_k_gaps_cancellable, Progress};
 
 /// Frame `i` holds the histogram of gaps starting at indices `min .. min + (i+1)·step`
 /// (the last frame also absorbs the remainder up to `max`).
@@ -23,17 +25,34 @@ impl FrameSet {
         count: usize,
         on_block: impl FnMut(Progress) -> bool,
     ) -> Option<Self> {
+        Self::build_cancellable(min, max, k, count, &CancelToken::new(), on_block)
+    }
+
+    /// Cancellable variant of [`FrameSet::build`].
+    ///
+    /// Checks `cancel` before allocating frame delta buffers and throughout prime sieving.
+    pub fn build_cancellable(
+        min: u64,
+        max: u64,
+        k: usize,
+        count: usize,
+        cancel: &CancelToken,
+        on_block: impl FnMut(Progress) -> bool,
+    ) -> Option<Self> {
+        if cancel.is_cancelled() {
+            return None;
+        }
         let count = count.max(1);
         let step = frame_step(min, max, count);
         let mut deltas = vec![histogram::empty(); count];
 
-        let completed = scan_k_gaps(max, k, on_block, |n, gap| {
+        let completed = scan_k_gaps_cancellable(max, k, cancel, on_block, |n, gap| {
             if n >= min {
                 let frame = (((n - min) / step) as usize).min(count - 1);
                 histogram::record(&mut deltas[frame], gap);
             }
         });
-        if !completed {
+        if !completed || cancel.is_cancelled() {
             return None;
         }
 
@@ -120,5 +139,12 @@ mod tests {
         assert!(frames.matches(1, 1_000, 1));
         assert!(!frames.matches(1, 1_000, 2));
         assert!(FrameSet::build(1, 1_000, 1, 5, |_| false).is_none());
+    }
+
+    #[test]
+    fn test_build_cancellable_returns_none() {
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        assert!(FrameSet::build_cancellable(1, 1_000, 1, 5, &cancel, |_| true).is_none());
     }
 }

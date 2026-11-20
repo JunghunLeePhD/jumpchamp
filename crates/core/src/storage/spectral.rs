@@ -1,6 +1,7 @@
 //! 2D spectral gap density heatmap matrix across prime-index scales.
 
-use crate::engine::FrameSet;
+use crate::cancel::CancelToken;
+use crate::engine::{FrameSet, Progress};
 
 use super::engine::DistributionEngine;
 use super::format::HISTOGRAM_BINS;
@@ -50,19 +51,47 @@ impl SpectralHeatmap {
         even_only: bool,
         log_scale: bool,
     ) -> Self {
+        Self::from_index_cancellable(
+            engine,
+            start_idx_1based,
+            end_idx_1based,
+            max_cols,
+            max_gap,
+            even_only,
+            log_scale,
+            &CancelToken::new(),
+        )
+        .expect("uncancellable index spectral heatmap cannot abort")
+    }
+
+    /// Cancellable variant of [`SpectralHeatmap::from_index`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_index_cancellable(
+        engine: &DistributionEngine,
+        start_idx_1based: u64,
+        end_idx_1based: u64,
+        max_cols: usize,
+        max_gap: u64,
+        even_only: bool,
+        log_scale: bool,
+        cancel: &CancelToken,
+    ) -> Option<Self> {
+        if cancel.is_cancelled() {
+            return None;
+        }
         let gap_values = build_gap_values(max_gap, even_only);
         let rows = gap_values.len();
         let blocks = engine.blocks();
 
         if blocks.is_empty() || start_idx_1based > end_idx_1based {
-            return Self::empty(
+            return Some(Self::empty(
                 start_idx_1based,
                 end_idx_1based,
                 1,
                 log_scale,
                 even_only,
                 gap_values,
-            );
+            ));
         }
 
         let bsize = engine.block_size();
@@ -70,14 +99,14 @@ impl SpectralHeatmap {
         let end0 = end_idx_1based.saturating_sub(1);
         let m_start = (start0 / bsize) as usize;
         if m_start >= blocks.len() {
-            return Self::empty(
+            return Some(Self::empty(
                 start_idx_1based,
                 end_idx_1based,
                 1,
                 log_scale,
                 even_only,
                 gap_values,
-            );
+            ));
         }
         let m_end = ((end0 / bsize) as usize).min(blocks.len() - 1);
         let num_blocks = m_end - m_start + 1;
@@ -89,6 +118,9 @@ impl SpectralHeatmap {
         let mut col_totals = vec![0u64; cols];
 
         for col in 0..cols {
+            if cancel.is_cancelled() {
+                return None;
+            }
             let b0 = m_start + (col * num_blocks) / cols;
             let b1 = (m_start + ((col + 1) * num_blocks) / cols).saturating_sub(1);
             let b1 = b1.max(b0).min(m_end);
@@ -110,8 +142,11 @@ impl SpectralHeatmap {
             }
         }
 
+        if cancel.is_cancelled() {
+            return None;
+        }
         let intensities = normalize_columns(cols, rows, &counts, log_scale);
-        Self {
+        Some(Self {
             cols,
             rows,
             start_idx: start_idx_1based,
@@ -124,7 +159,7 @@ impl SpectralHeatmap {
             intensities,
             counts,
             col_totals,
-        }
+        })
     }
 
     /// Builds a `k`-step spectral heatmap over `[start_idx_1based, end_idx_1based]` using `RawGaps`.
@@ -140,31 +175,65 @@ impl SpectralHeatmap {
         log_scale: bool,
         max_samples_per_col: usize,
     ) -> Self {
+        Self::from_raw_gaps_cancellable(
+            raw,
+            start_idx_1based,
+            end_idx_1based,
+            k,
+            max_cols,
+            max_gap,
+            even_only,
+            log_scale,
+            max_samples_per_col,
+            &CancelToken::new(),
+            |_| true,
+        )
+        .expect("uncancellable raw spectral heatmap cannot abort")
+    }
+
+    /// Cancellable variant of [`SpectralHeatmap::from_raw_gaps`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_raw_gaps_cancellable(
+        raw: &RawGaps,
+        start_idx_1based: u64,
+        end_idx_1based: u64,
+        k: usize,
+        max_cols: usize,
+        max_gap: u64,
+        even_only: bool,
+        log_scale: bool,
+        max_samples_per_col: usize,
+        cancel: &CancelToken,
+        mut on_col: impl FnMut(Progress) -> bool,
+    ) -> Option<Self> {
+        if cancel.is_cancelled() {
+            return None;
+        }
         let gap_values = build_gap_values(max_gap, even_only);
         let rows = gap_values.len();
         if k == 0 || start_idx_1based > end_idx_1based || raw.is_empty() {
-            return Self::empty(
+            return Some(Self::empty(
                 start_idx_1based,
                 end_idx_1based,
                 k,
                 log_scale,
                 even_only,
                 gap_values,
-            );
+            ));
         }
 
         let start0 = (start_idx_1based.saturating_sub(1) as usize).min(raw.len());
         let end0_excl = (end_idx_1based as usize).min(raw.len());
         let span = end0_excl.saturating_sub(start0);
         if span < k {
-            return Self::empty(
+            return Some(Self::empty(
                 start_idx_1based,
                 end_idx_1based,
                 k,
                 log_scale,
                 even_only,
                 gap_values,
-            );
+            ));
         }
 
         let cols = span.min(max_cols.max(1));
@@ -173,11 +242,25 @@ impl SpectralHeatmap {
         let mut col_totals = vec![0u64; cols];
 
         for col in 0..cols {
+            if cancel.is_cancelled()
+                || !on_col(Progress {
+                    done: col + 1,
+                    total: cols,
+                })
+            {
+                return None;
+            }
             let c_start = start0 + (col * span) / cols;
             let c_end = start0 + ((col + 1) * span) / cols;
             let c_end = c_end.max(c_start + 1).min(end0_excl);
 
-            let (hist, _) = raw.k_step_histogram_sampled(c_start, c_end, k, max_samples_per_col);
+            let (hist, _) = raw.k_step_histogram_sampled_cancellable(
+                c_start,
+                c_end,
+                k,
+                max_samples_per_col,
+                cancel,
+            )?;
             col_ranges.push((c_start as u64 + 1, c_end as u64));
             col_totals[col] = hist.iter().sum();
 
@@ -186,8 +269,11 @@ impl SpectralHeatmap {
             }
         }
 
+        if cancel.is_cancelled() {
+            return None;
+        }
         let intensities = normalize_columns(cols, rows, &counts, log_scale);
-        Self {
+        Some(Self {
             cols,
             rows,
             start_idx: start_idx_1based,
@@ -200,7 +286,7 @@ impl SpectralHeatmap {
             intensities,
             counts,
             col_totals,
-        }
+        })
     }
 
     /// Builds a 2D spectral heatmap from an in-memory cumulative [`FrameSet`].
@@ -380,6 +466,63 @@ mod tests {
         assert_eq!(raw_hm.cols, 4);
         assert_eq!(raw_hm.k, 2);
         assert!(raw_hm.intensities.iter().all(|&v| (0.0..=1.0).contains(&v)));
+
+        let token = CancelToken::new();
+        let raw_uncancelled = SpectralHeatmap::from_raw_gaps_cancellable(
+            &raw,
+            1,
+            40,
+            2,
+            4,
+            20,
+            true,
+            true,
+            10_000,
+            &token,
+            |_| true,
+        )
+        .unwrap();
+        assert_eq!(raw_uncancelled.counts, raw_hm.counts);
+
+        let idx_uncancelled =
+            SpectralHeatmap::from_index_cancellable(&engine, 1, 40, 16, 10, true, false, &token)
+                .unwrap();
+        assert_eq!(idx_uncancelled.counts, hm.counts);
+
+        assert!(SpectralHeatmap::from_raw_gaps_cancellable(
+            &raw,
+            1,
+            40,
+            2,
+            4,
+            20,
+            true,
+            true,
+            10_000,
+            &token,
+            |p| p.done < 2,
+        )
+        .is_none());
+
+        token.cancel();
+        assert!(SpectralHeatmap::from_index_cancellable(
+            &engine, 1, 40, 16, 10, true, false, &token
+        )
+        .is_none());
+        assert!(SpectralHeatmap::from_raw_gaps_cancellable(
+            &raw,
+            1,
+            40,
+            2,
+            4,
+            20,
+            true,
+            true,
+            10_000,
+            &token,
+            |_| true,
+        )
+        .is_none());
 
         let _ = std::fs::remove_file(&gaps_path);
         let _ = std::fs::remove_file(&idx_path);

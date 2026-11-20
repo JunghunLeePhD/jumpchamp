@@ -2,8 +2,10 @@
 
 use std::collections::HashMap;
 
+use crate::cancel::CancelToken;
+
 use super::histogram::{self, Histogram};
-use super::scan::{scan_k_gaps, Progress};
+use super::scan::{scan_k_gaps_cancellable, Progress};
 
 /// Prime indices per cached chunk.
 pub const CHUNK: u64 = 10_000;
@@ -55,12 +57,29 @@ pub fn range_histogram(
     cache: &mut ChunkCache,
     on_block: impl FnMut(Progress) -> bool,
 ) -> Option<Histogram> {
+    range_histogram_cancellable(min, max, k, cache, &CancelToken::new(), on_block)
+}
+
+/// Cancellable variant of [`range_histogram`].
+///
+/// Returns `None` if `cancel` is triggered or `on_block` returns `false`.
+pub fn range_histogram_cancellable(
+    min: u64,
+    max: u64,
+    k: usize,
+    cache: &mut ChunkCache,
+    cancel: &CancelToken,
+    on_block: impl FnMut(Progress) -> bool,
+) -> Option<Histogram> {
+    if cancel.is_cancelled() {
+        return None;
+    }
     if max > EXACT_THRESHOLD {
         if let Some(hist) = cache.sum(min / CHUNK, max / CHUNK, k) {
             return Some(hist);
         }
     }
-    scan_and_cache(min, max, k, cache, on_block)
+    scan_and_cache(min, max, k, cache, cancel, on_block)
 }
 
 /// Walks primes up to `max`, filling the cache with every complete chunk along the way.
@@ -69,13 +88,14 @@ fn scan_and_cache(
     max: u64,
     k: usize,
     cache: &mut ChunkCache,
+    cancel: &CancelToken,
     on_block: impl FnMut(Progress) -> bool,
 ) -> Option<Histogram> {
     let mut hist = histogram::empty();
     let mut chunk_hist = histogram::empty();
     let mut chunk = 0;
 
-    let completed = scan_k_gaps(max, k, on_block, |n, gap| {
+    let completed = scan_k_gaps_cancellable(max, k, cancel, on_block, |n, gap| {
         if n / CHUNK != chunk {
             cache.insert(chunk, k, &chunk_hist);
             chunk_hist.fill(0);
@@ -136,5 +156,13 @@ mod tests {
     fn test_cancel_returns_none() {
         let mut cache = ChunkCache::default();
         assert!(range_histogram(1, 50_000, 1, &mut cache, |_| false).is_none());
+    }
+
+    #[test]
+    fn test_cancel_token_returns_none() {
+        let mut cache = ChunkCache::default();
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        assert!(range_histogram_cancellable(1, 50_000, 1, &mut cache, &cancel, |_| true).is_none());
     }
 }

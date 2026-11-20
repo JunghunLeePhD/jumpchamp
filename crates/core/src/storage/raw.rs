@@ -6,6 +6,7 @@ use std::path::Path;
 use memmap2::Mmap;
 use rayon::prelude::*;
 
+use crate::cancel::CancelToken;
 use crate::engine::{histogram, Histogram, Progress};
 
 use super::format::StorageError;
@@ -89,8 +90,22 @@ impl RawGaps {
         end_idx_exclusive: usize,
         k: usize,
     ) -> Histogram {
+        self.k_step_histogram_par_cancellable(start_idx, end_idx_exclusive, k, &CancelToken::new())
+            .unwrap_or_else(histogram::empty)
+    }
+
+    fn k_step_histogram_par_cancellable(
+        &self,
+        start_idx: usize,
+        end_idx_exclusive: usize,
+        k: usize,
+        cancel: &CancelToken,
+    ) -> Option<Histogram> {
+        if cancel.is_cancelled() {
+            return None;
+        }
         let Some((start, valid_end)) = self.valid_k_bounds(start_idx, end_idx_exclusive, k) else {
-            return histogram::empty();
+            return Some(histogram::empty());
         };
         let gaps = self.as_slice();
         let count = valid_end - start;
@@ -99,25 +114,36 @@ impl RawGaps {
             visit_k_step_window(&gaps[start..valid_end + k - 1], k, |gap| {
                 histogram::record(&mut hist, gap);
             });
-            return hist;
+            return (!cancel.is_cancelled()).then_some(hist);
         }
 
         let chunks = count.div_ceil(PARALLEL_THRESHOLD);
         (0..chunks)
             .into_par_iter()
             .map(|c| {
+                if cancel.is_cancelled() {
+                    return Err(());
+                }
                 let c_start = start + c * PARALLEL_THRESHOLD;
                 let c_end = (c_start + PARALLEL_THRESHOLD).min(valid_end);
                 let mut local = histogram::empty();
                 visit_k_step_window(&gaps[c_start..c_end + k - 1], k, |gap| {
                     histogram::record(&mut local, gap);
                 });
-                local
+                if cancel.is_cancelled() {
+                    Err(())
+                } else {
+                    Ok(local)
+                }
             })
-            .reduce(histogram::empty, |mut acc, local| {
+            .try_reduce(histogram::empty, |mut acc, local| {
+                if cancel.is_cancelled() {
+                    return Err(());
+                }
                 histogram::add(&mut acc, &local);
-                acc
+                Ok(acc)
             })
+            .ok()
     }
 
     /// Cancellable exact `k`-step gap histogram over `[start_idx, end_idx_exclusive)`.
@@ -162,13 +188,39 @@ impl RawGaps {
         k: usize,
         max_samples: usize,
     ) -> (Histogram, bool) {
+        self.k_step_histogram_sampled_cancellable(
+            start_idx,
+            end_idx_exclusive,
+            k,
+            max_samples,
+            &CancelToken::new(),
+        )
+        .unwrap_or_else(|| (histogram::empty(), false))
+    }
+
+    /// Cancellable variant of [`RawGaps::k_step_histogram_sampled`].
+    ///
+    /// Polls `cancel` at parallel chunk/window boundaries and returns `None` if aborted.
+    pub fn k_step_histogram_sampled_cancellable(
+        &self,
+        start_idx: usize,
+        end_idx_exclusive: usize,
+        k: usize,
+        max_samples: usize,
+        cancel: &CancelToken,
+    ) -> Option<(Histogram, bool)> {
+        if cancel.is_cancelled() {
+            return None;
+        }
         let Some((start, valid_end)) = self.valid_k_bounds(start_idx, end_idx_exclusive, k) else {
-            return (histogram::empty(), false);
+            return Some((histogram::empty(), false));
         };
         let count = valid_end - start;
         let budget = max_samples.max(1);
         if count <= budget {
-            return (self.k_step_histogram(start, valid_end, k), false);
+            return self
+                .k_step_histogram_par_cancellable(start, valid_end, k, cancel)
+                .map(|hist| (hist, false));
         }
 
         let windows = 200usize.min(budget).max(1);
@@ -178,6 +230,9 @@ impl RawGaps {
         let hist = (0..windows)
             .into_par_iter()
             .map(|w| {
+                if cancel.is_cancelled() {
+                    return Err(());
+                }
                 let w_start = start + (w * count) / windows;
                 let w_end = (w_start + per_window).min(valid_end);
                 let mut local = histogram::empty();
@@ -186,14 +241,22 @@ impl RawGaps {
                         histogram::record(&mut local, gap);
                     });
                 }
-                local
+                if cancel.is_cancelled() {
+                    Err(())
+                } else {
+                    Ok(local)
+                }
             })
-            .reduce(histogram::empty, |mut acc, local| {
+            .try_reduce(histogram::empty, |mut acc, local| {
+                if cancel.is_cancelled() {
+                    return Err(());
+                }
                 histogram::add(&mut acc, &local);
-                acc
-            });
+                Ok(acc)
+            })
+            .ok()?;
 
-        (hist, true)
+        Some((hist, true))
     }
 
     fn valid_k_bounds(
@@ -314,6 +377,23 @@ mod tests {
 
         let cancelled = raw.k_step_histogram_cancellable(0, gaps.len(), 2, |_| false);
         assert!(cancelled.is_none());
+
+        let token = CancelToken::new();
+        assert_eq!(
+            raw.k_step_histogram_sampled_cancellable(0, gaps.len(), 3, 20_000, &token),
+            Some((sampled_hist, true))
+        );
+        assert_eq!(
+            raw.k_step_histogram_sampled_cancellable(0, gaps.len(), 3, 500_000, &token),
+            Some((exact, false))
+        );
+        token.cancel();
+        assert!(raw
+            .k_step_histogram_sampled_cancellable(0, gaps.len(), 3, 20_000, &token)
+            .is_none());
+        assert!(raw
+            .k_step_histogram_sampled_cancellable(0, gaps.len(), 3, 500_000, &token)
+            .is_none());
 
         let _ = std::fs::remove_file(&path);
     }
