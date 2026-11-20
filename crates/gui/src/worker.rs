@@ -5,16 +5,17 @@
 //! events it already produced are dropped by `poll()`.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use jumpchamp_core::engine::{
-    frame_step, histogram, range_histogram, ChunkCache, FrameSet, Histogram, Progress,
+    frame_step, histogram, range_histogram_cancellable, ChunkCache, FrameSet, Histogram, Progress,
 };
 use jumpchamp_core::storage::{DistributionEngine, RawGaps, SpectralHeatmap};
+use jumpchamp_core::CancelToken;
 
 use crate::state::{DatasetMeta, SpectralKey};
 
@@ -73,7 +74,7 @@ pub enum Event {
 }
 
 enum Command {
-    Run(u64, Job),
+    Run(u64, CancelToken, Job),
     ClearCache,
     LoadDataset {
         index_path: PathBuf,
@@ -87,6 +88,8 @@ pub struct Worker {
     tx: Sender<Command>,
     rx: Receiver<(u64, Event)>,
     epoch: Arc<AtomicU64>,
+    active_cancel: Mutex<CancelToken>,
+    busy: Arc<AtomicBool>,
 }
 
 impl Worker {
@@ -96,12 +99,27 @@ impl Worker {
         let (events, rx) = unbounded();
         let epoch = Arc::new(AtomicU64::new(0));
         let shared = Arc::clone(&epoch);
-        std::thread::spawn(move || serve(commands, events, shared, notify));
-        Self { tx, rx, epoch }
+        let busy = Arc::new(AtomicBool::new(false));
+        let worker_busy = Arc::clone(&busy);
+        std::thread::spawn(move || serve(commands, events, shared, worker_busy, notify));
+        Self {
+            tx,
+            rx,
+            epoch,
+            active_cancel: Mutex::new(CancelToken::new()),
+            busy,
+        }
     }
 
     pub fn run(&self, job: Job) {
-        self.tx.send(Command::Run(self.epoch(), job)).ok();
+        let guard = self
+            .active_cancel
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tag = self.epoch();
+        let cancel = guard.clone();
+        drop(guard);
+        self.tx.send(Command::Run(tag, cancel, job)).ok();
     }
 
     /// Cancels prior jobs and immediately submits `job` under the new epoch.
@@ -110,9 +128,21 @@ impl Worker {
         self.run(job);
     }
 
-    /// Abandons all queued and running jobs.
+    /// Abandons all queued and running jobs immediately via epoch bump and `CancelToken`.
     pub fn cancel(&self) {
+        let mut guard = self
+            .active_cancel
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.epoch.fetch_add(1, Ordering::SeqCst);
+        let old = std::mem::replace(&mut *guard, CancelToken::new());
+        drop(guard);
+        old.cancel();
+    }
+
+    /// Returns `true` while the worker thread is actively executing a job.
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::Acquire)
     }
 
     /// Cancels everything and frees the chunk cache.
@@ -171,10 +201,32 @@ impl Worker {
     }
 }
 
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+
+struct BusyGuard<'a>(&'a AtomicBool);
+
+impl<'a> BusyGuard<'a> {
+    fn new(flag: &'a AtomicBool) -> Self {
+        flag.store(true, Ordering::Release);
+        Self(flag)
+    }
+}
+
+impl Drop for BusyGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 fn serve(
     commands: Receiver<Command>,
     events: Sender<(u64, Event)>,
     epoch: Arc<AtomicU64>,
+    busy: Arc<AtomicBool>,
     notify: impl Fn(),
 ) {
     let mut cache = ChunkCache::default();
@@ -187,7 +239,7 @@ fn serve(
     };
 
     for command in commands {
-        let (tag, job) = match command {
+        let (tag, cancel, job) = match command {
             Command::ClearCache => {
                 cache.clear();
                 continue;
@@ -260,26 +312,40 @@ fn serve(
                 );
                 continue;
             }
-            Command::Run(tag, job) => (tag, job),
+            Command::Run(tag, cancel, job) => (tag, cancel, job),
         };
 
-        let live = || epoch.load(Ordering::SeqCst) == tag;
+        let live = || !cancel.is_cancelled() && epoch.load(Ordering::SeqCst) == tag;
         if !live() {
             continue;
         }
+        let _busy_guard = BusyGuard::new(&busy);
 
         let mut last_report: Option<Instant> = None;
         let on_block = |p: Progress| {
+            if !live() {
+                return false;
+            }
             if p.done == p.total || last_report.is_none_or(|t| t.elapsed() >= PROGRESS_INTERVAL) {
                 last_report = Some(Instant::now());
                 emit(tag, Event::Progress(p));
             }
-            live()
+            true
         };
 
         let start = Instant::now();
         let ms = || start.elapsed().as_secs_f64() * 1000.0;
-        let result = run_job(job, index.as_ref(), raw_gaps.as_ref(), &mut cache, on_block);
+        let result = run_job(
+            job,
+            index.as_ref(),
+            raw_gaps.as_ref(),
+            &mut cache,
+            &cancel,
+            on_block,
+        );
+        if !live() {
+            continue;
+        }
         match result {
             Ok(Some(ev_fn)) => emit(tag, ev_fn(ms())),
             Ok(None) => {}
@@ -295,8 +361,13 @@ fn run_job(
     index: Option<&DistributionEngine>,
     raw_gaps: Option<&RawGaps>,
     cache: &mut ChunkCache,
+    cancel: &CancelToken,
     mut on_block: impl FnMut(Progress) -> bool,
 ) -> JobOutput {
+    if cancel.is_cancelled() {
+        return Ok(None);
+    }
+
     match job {
         Job::Histogram { min, max, k } => {
             let start0 = min.saturating_sub(1);
@@ -304,11 +375,14 @@ fn run_job(
 
             if k == 1 {
                 if let Some(idx) = index {
-                    let dist = if raw_gaps.is_some() && max.saturating_sub(min) < EXACT_QUERY_LIMIT
-                    {
-                        idx.query_distribution_exact(start0, end0, raw_gaps)
-                    } else {
-                        idx.query_distribution(start0, end0)
+                    let raw_opt = (raw_gaps.is_some()
+                        && max.saturating_sub(min) < EXACT_QUERY_LIMIT)
+                        .then_some(raw_gaps)
+                        .flatten();
+                    let Some(dist) =
+                        idx.query_distribution_exact_cancellable(start0, end0, raw_opt, cancel)
+                    else {
+                        return Ok(None);
                     };
                     let hist = dist.to_vec();
                     return Ok(Some(Box::new(move |ms| Event::Histogram {
@@ -320,12 +394,15 @@ fn run_job(
             }
 
             if let Some(raw) = raw_gaps {
-                let (hist, sampled) = raw.k_step_histogram_sampled(
+                let Some((hist, sampled)) = raw.k_step_histogram_sampled_cancellable(
                     start0 as usize,
                     max as usize,
                     k,
                     K_STEP_SAMPLE_BUDGET,
-                );
+                    cancel,
+                ) else {
+                    return Ok(None);
+                };
                 return Ok(Some(Box::new(move |ms| Event::Histogram {
                     hist,
                     ms,
@@ -337,13 +414,15 @@ fn run_job(
                 return Err("Load raw gaps.bin to query k > 1 gaps beyond 10M primes".to_string());
             }
 
-            Ok(range_histogram(min, max, k, cache, on_block).map(|hist| {
-                Box::new(move |ms| Event::Histogram {
-                    hist,
-                    ms,
-                    sampled: false,
-                }) as Box<dyn FnOnce(f64) -> Event>
-            }))
+            Ok(
+                range_histogram_cancellable(min, max, k, cache, cancel, on_block).map(|hist| {
+                    Box::new(move |ms| Event::Histogram {
+                        hist,
+                        ms,
+                        sampled: false,
+                    }) as Box<dyn FnOnce(f64) -> Event>
+                }),
+            )
         }
         Job::Frames { min, max, k, count } => {
             if k == 1 {
@@ -352,11 +431,13 @@ fn run_job(
                     let end0 = max.saturating_sub(1);
                     let blocks_spanned =
                         (end0 / idx.block_size()).saturating_sub(start0 / idx.block_size()) + 1;
-                    let frames = if raw_gaps.is_some() && blocks_spanned < SUBBLOCK_FRAME_THRESHOLD
-                    {
-                        idx.build_frames_exact(min, max, count, raw_gaps)
-                    } else {
-                        idx.build_frames(min, max, count)
+                    let raw_opt = (raw_gaps.is_some() && blocks_spanned < SUBBLOCK_FRAME_THRESHOLD)
+                        .then_some(raw_gaps)
+                        .flatten();
+                    let Some(frames) = idx
+                        .build_frames_exact_cancellable(min, max, count, raw_opt, cancel, on_block)
+                    else {
+                        return Ok(None);
                     };
                     return Ok(Some(Box::new(move |ms| Event::Frames { frames, ms })));
                 }
@@ -367,10 +448,12 @@ fn run_job(
                 let step = frame_step(min, max, count);
                 let mut deltas = Vec::with_capacity(count);
                 for i in 0..count {
-                    if !on_block(Progress {
-                        done: i + 1,
-                        total: count,
-                    }) {
+                    if cancel.is_cancelled()
+                        || !on_block(Progress {
+                            done: i + 1,
+                            total: count,
+                        })
+                    {
                         return Ok(None);
                     }
                     let f_start = min + i as u64 * step;
@@ -380,12 +463,15 @@ fn run_job(
                         (f_start + step - 1).min(max)
                     };
                     if f_start <= f_end && f_start <= max {
-                        let (hist, _) = raw.k_step_histogram_sampled(
+                        let Some((hist, _)) = raw.k_step_histogram_sampled_cancellable(
                             f_start.saturating_sub(1) as usize,
                             f_end as usize,
                             k,
                             K_STEP_FRAME_SAMPLE_BUDGET,
-                        );
+                            cancel,
+                        ) else {
+                            return Ok(None);
+                        };
                         deltas.push(histogram::trimmed(&hist));
                     } else {
                         deltas.push(Vec::new());
@@ -399,8 +485,10 @@ fn run_job(
                 return Err("Load raw gaps.bin to animate k > 1 beyond 10M primes".to_string());
             }
 
-            Ok(FrameSet::build(min, max, k, count, on_block)
-                .map(|frames| Box::new(move |ms| Event::Frames { frames, ms }) as _))
+            Ok(
+                FrameSet::build_cancellable(min, max, k, count, cancel, on_block)
+                    .map(|frames| Box::new(move |ms| Event::Frames { frames, ms }) as _),
+            )
         }
         Job::Spectral {
             min,
@@ -429,7 +517,7 @@ fn run_job(
                     let heatmap = if let (true, Some(raw)) =
                         (blocks_spanned < SUBBLOCK_FRAME_THRESHOLD, raw_gaps)
                     {
-                        SpectralHeatmap::from_raw_gaps(
+                        SpectralHeatmap::from_raw_gaps_cancellable(
                             raw,
                             min,
                             max,
@@ -439,11 +527,16 @@ fn run_job(
                             even_only,
                             log_scale,
                             SPECTRAL_COL_SAMPLES,
+                            cancel,
+                            on_block,
                         )
                     } else {
-                        SpectralHeatmap::from_index(
-                            idx, min, max, cols, max_gap, even_only, log_scale,
+                        SpectralHeatmap::from_index_cancellable(
+                            idx, min, max, cols, max_gap, even_only, log_scale, cancel,
                         )
+                    };
+                    let Some(heatmap) = heatmap else {
+                        return Ok(None);
                     };
                     return Ok(Some(Box::new(move |ms| Event::Spectral {
                         heatmap,
@@ -454,7 +547,7 @@ fn run_job(
             }
 
             if let Some(raw) = raw_gaps {
-                let heatmap = SpectralHeatmap::from_raw_gaps(
+                let Some(heatmap) = SpectralHeatmap::from_raw_gaps_cancellable(
                     raw,
                     min,
                     max,
@@ -464,7 +557,11 @@ fn run_job(
                     even_only,
                     log_scale,
                     SPECTRAL_COL_SAMPLES,
-                );
+                    cancel,
+                    on_block,
+                ) else {
+                    return Ok(None);
+                };
                 return Ok(Some(Box::new(move |ms| Event::Spectral {
                     heatmap,
                     key,
@@ -481,11 +578,13 @@ fn run_job(
 
             let frame_count = cols.clamp(16, 120);
             Ok(
-                FrameSet::build(min, max, k, frame_count, on_block).map(|frames| {
-                    let heatmap =
-                        SpectralHeatmap::from_frame_set(&frames, max_gap, even_only, log_scale);
-                    Box::new(move |ms| Event::Spectral { heatmap, key, ms }) as _
-                }),
+                FrameSet::build_cancellable(min, max, k, frame_count, cancel, on_block).map(
+                    |frames| {
+                        let heatmap =
+                            SpectralHeatmap::from_frame_set(&frames, max_gap, even_only, log_scale);
+                        Box::new(move |ms| Event::Spectral { heatmap, key, ms }) as _
+                    },
+                ),
             )
         }
     }
@@ -646,5 +745,45 @@ mod tests {
 
         let _ = std::fs::remove_file(&gaps_path);
         let _ = std::fs::remove_file(&index_path);
+    }
+
+    #[test]
+    fn test_clear_cache_aborts_large_job_mid_computation() {
+        let worker = Worker::spawn(|| {});
+        worker.run(Job::Frames {
+            min: 1,
+            max: 10_000_000,
+            k: 2,
+            count: 300,
+        });
+
+        let wait_busy_deadline = Instant::now() + Duration::from_secs(5);
+        while !worker.is_busy() {
+            assert!(
+                Instant::now() < wait_busy_deadline,
+                "worker never became busy"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        let abort_start = Instant::now();
+        worker.clear_cache();
+        worker.run(Job::Histogram {
+            min: 1,
+            max: 9,
+            k: 1,
+        });
+
+        match wait_for_result(&worker) {
+            Event::Histogram { hist, .. } => {
+                let elapsed = abort_start.elapsed();
+                assert_eq!(&hist[..7], &[0, 1, 4, 0, 3, 0, 1]);
+                assert!(
+                    elapsed < Duration::from_millis(1000),
+                    "abort + follow-up took too long: {elapsed:?}"
+                );
+            }
+            _ => panic!("expected histogram after abort"),
+        }
     }
 }

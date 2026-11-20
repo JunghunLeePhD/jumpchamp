@@ -21,13 +21,16 @@ pub fn render(ui: &mut Ui, state: &mut AppState, palette: &Palette) -> Option<Ac
         {
             state.prefs.show_settings ^= true;
         }
+        let reset_act = reset_button(ui);
+        let mut enabled_act = None;
         ui.add_enabled_ui(!state.playback.is_busy(), |ui| {
-            action = reset_button(ui)
-                .or_else(|| k_input(ui, state))
-                .or_else(|| index_range(ui, state, palette));
+            let k_act = k_input(ui, state);
+            let range_act = index_range(ui, state, palette);
             rank_range(ui, state, palette);
+            enabled_act = k_act.or(range_act);
         });
-        action = action.or_else(|| view_selector(ui, state));
+        let view_act = view_selector(ui, state);
+        action = reset_act.or(enabled_act).or(view_act);
         busy_badge(ui, state.playback.mode);
     });
     ui.add_space(2.0);
@@ -36,12 +39,10 @@ pub fn render(ui: &mut Ui, state: &mut AppState, palette: &Palette) -> Option<Ac
 }
 
 fn reset_button(ui: &mut Ui) -> Option<Action> {
-    let clicked = hint(
-        ui.button("🔄"),
-        "Reset & Clear Cache\nWipes all in-memory precomputations, clears worker segment cache, and restores initial launch state.",
-        "Reset is disabled while animation is running. Pause or stop animation first.",
-    )
-    .clicked();
+    let clicked = ui
+        .button("🔄")
+        .on_hover_text("Reset & Clear Cache\nImmediately cancels any active computation, wipes all in-memory precomputations, clears worker segment cache, and restores initial launch state.")
+        .clicked();
     ui.separator();
     clicked.then_some(Action::Reset)
 }

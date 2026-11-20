@@ -19,6 +19,7 @@ pub fn render(ui: &mut Ui, state: &AppState) {
         let fraction = match (state.playback.mode, state.progress) {
             (Mode::Playing, _) => Some(state.animation_progress()),
             (Mode::Precaching, p) => Some(p.map_or(0.0, |p| p.done as f32 / p.total as f32)),
+            (Mode::Stopped, Some(p)) if p.total > 0 => Some(p.done as f32 / p.total as f32),
             (Mode::Stopped, _) => None,
         };
         if let Some(fraction) = fraction {

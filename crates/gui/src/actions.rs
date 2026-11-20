@@ -37,6 +37,7 @@ pub fn apply(action: Action, state: &mut AppState, worker: &Worker) {
         Action::Cancel => {
             worker.cancel();
             state.playback.mode = Mode::Stopped;
+            state.progress = None;
         }
         Action::Reset => {
             worker.clear_cache();
@@ -120,7 +121,7 @@ fn refresh_spectral(state: &mut AppState, worker: &Worker) {
         }
     }
 
-    worker.run(Job::Spectral {
+    worker.run_latest(Job::Spectral {
         min: q.min,
         max: q.max,
         k: q.k,
@@ -138,9 +139,8 @@ fn show(state: &mut AppState, worker: &Worker) {
 
     let from_cache = state.show_cached_frame();
     if !from_cache || spectral_stale {
-        if state.dataset.is_some() {
-            worker.cancel();
-        }
+        worker.cancel();
+        state.progress = None;
         let q = state.query;
         if !from_cache {
             worker.run(Job::Histogram {
@@ -179,7 +179,7 @@ fn play(direction: Direction, state: &mut AppState, worker: &Worker) {
     } else {
         state.playback.mode = Mode::Precaching;
         state.progress = None;
-        worker.run(Job::Frames {
+        worker.run_latest(Job::Frames {
             min: q.min,
             max: q.max,
             k: q.k,
@@ -197,6 +197,7 @@ pub fn receive(state: &mut AppState, worker: &Worker) {
                 state.show_histogram(&hist);
                 state.latency_ms = Some(ms);
                 state.last_query_sampled = sampled;
+                state.progress = None;
             }
             Event::Frames { frames, ms } => {
                 state.frames = Some(frames);
@@ -217,6 +218,7 @@ pub fn receive(state: &mut AppState, worker: &Worker) {
                 state.spectral_key = Some(key);
                 state.spectral_generation += 1;
                 state.latency_ms = Some(ms);
+                state.progress = None;
             }
             Event::DatasetLoaded { meta, ms } => {
                 state.apply_dataset(meta);
@@ -233,6 +235,7 @@ pub fn receive(state: &mut AppState, worker: &Worker) {
             }
             Event::DatasetError(err) => {
                 state.dataset_error = Some(err);
+                state.progress = None;
             }
         }
     }
@@ -373,5 +376,54 @@ mod tests {
 
         let _ = std::fs::remove_file(&gaps_path);
         let _ = std::fs::remove_file(&index_path);
+    }
+
+    #[test]
+    fn test_reset_during_active_precaching_aborts_immediately() {
+        let worker = Worker::spawn(|| {});
+        let mut state = AppState {
+            query: Query {
+                k: 2,
+                min: 1,
+                max: 10_000_000,
+            },
+            ..Default::default()
+        };
+
+        apply(Action::Play(Direction::Forward), &mut state, &worker);
+        assert_eq!(state.playback.mode, Mode::Precaching);
+
+        let wait_busy_deadline = Instant::now() + Duration::from_secs(5);
+        while !worker.is_busy() {
+            assert!(
+                Instant::now() < wait_busy_deadline,
+                "worker never became busy"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        let reset_start = Instant::now();
+        apply(Action::Reset, &mut state, &worker);
+        assert_eq!(state.playback.mode, Mode::Stopped);
+        assert!(state.bars.is_empty());
+        assert!(state.frames.is_none());
+        assert!(state.progress.is_none());
+
+        state.query = Query {
+            k: 1,
+            min: 1,
+            max: 1_000,
+        };
+        state.playback.position = 1;
+        apply(Action::Step(Direction::Forward), &mut state, &worker);
+        settle(&mut state, &worker, |s| !s.bars.is_empty());
+
+        let elapsed = reset_start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(1000),
+            "reset abort + small step took too long: {elapsed:?}"
+        );
+        let total: u64 = state.bars.iter().map(|b| b.1).sum();
+        assert_eq!(total, state.playback.position);
     }
 }
