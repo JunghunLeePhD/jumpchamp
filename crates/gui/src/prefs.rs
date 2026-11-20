@@ -34,6 +34,7 @@ pub struct Prefs {
     pub show_grid_lines: bool,
     pub show_pct_labels: bool,
     pub show_heatmap_meter: bool,
+    pub show_ranking_board: bool,
     pub show_bar_tooltip: bool,
 }
 
@@ -52,6 +53,7 @@ impl Default for Prefs {
             show_grid_lines: true,
             show_pct_labels: true,
             show_heatmap_meter: true,
+            show_ranking_board: true,
             show_bar_tooltip: false,
         }
     }
@@ -72,7 +74,9 @@ mod tests {
         assert_eq!(p.max_prime_limit, 10_000_000);
         assert_eq!(p.view_mode, ChartView::BarChart);
         assert!(!p.show_bar_tooltip);
-        assert!(p.show_grid_lines && p.show_pct_labels && p.show_heatmap_meter);
+        assert!(
+            p.show_grid_lines && p.show_pct_labels && p.show_heatmap_meter && p.show_ranking_board
+        );
         assert!(p.heatmap_log_scale && p.heatmap_even_only);
     }
 }

@@ -27,7 +27,7 @@ pub fn render(ctx: &Context, state: &mut AppState, palette: &Palette) -> Option<
         .resizable(false)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .fixed_size(egui::vec2(470.0, 470.0))
+        .fixed_size(egui::vec2(470.0, 490.0))
         .show(ctx, |ui| {
             ui.add_space(4.0);
             section(ui, palette, "Theme Mode", |ui| {
@@ -172,6 +172,10 @@ fn toggles(ui: &mut Ui, state: &mut AppState) {
     ui.checkbox(
         &mut p.show_heatmap_meter,
         "Show Heat Map Count Meter (Top-Right)",
+    );
+    ui.checkbox(
+        &mut p.show_ranking_board,
+        "Show Top 5 Ranking Board & Primorials (Top-Left)",
     );
     ui.checkbox(&mut p.show_bar_tooltip, "Show Cursor Hover Details Tooltip");
 }
