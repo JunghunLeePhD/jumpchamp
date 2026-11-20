@@ -12,7 +12,11 @@ pub mod engine;
 pub mod sieve;
 pub mod storage;
 
-pub use analysis::{count_residues, gap_transition_matrix, k_step_gaps, record_gaps};
+pub use analysis::{
+    count_residues, format_prime_factorization, format_primorial_multiple, gap_transition_matrix,
+    highest_primorial_divisor, is_primorial, k_step_gaps, prime_factors, primorials, record_gaps,
+    Primorial, PRIMORIALS,
+};
 pub use cancel::CancelToken;
 pub use engine::{
     frame_step, range_histogram, range_histogram_cancellable, scan_k_gaps_cancellable, top_gaps,

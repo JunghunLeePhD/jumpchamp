@@ -3,6 +3,7 @@
 // ============================================================================
 
 use super::gaps::RecordGap;
+use super::primorial::{format_prime_factorization, PRIMORIALS};
 use std::collections::BTreeMap;
 
 /// Formats a gap frequency map as an aligned text report, showing entries between `top_min` and `top_max` rank.
@@ -74,6 +75,26 @@ pub fn format_residue_report(residues: &BTreeMap<u64, u64>, modulus: u64) -> Str
     out
 }
 
+/// Formats the static primorial reference table (`p_n#`) with prime factorizations.
+pub fn format_primorial_report() -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{:<8} {:<10} {:<12} {:<14} {:<24}\n",
+        "Index", "Notation", "Prime (p_n)", "Value (p_n#)", "Prime Factorization"
+    ));
+    out.push_str(&format!("{}\n", "-".repeat(70)));
+
+    for p in PRIMORIALS {
+        let factors = format_prime_factorization(p.value);
+        out.push_str(&format!(
+            "{:<8} {:<10} {:<12} {:<14} {factors}\n",
+            p.index, p.label, p.prime, p.value
+        ));
+    }
+    out.push_str(&format!("{}\n", "-".repeat(70)));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +109,14 @@ mod tests {
         let report = format_report(&map, 1, 2);
         assert!(report.contains("Diff"));
         assert!(report.contains("Total Analyzed Pairs: 100"));
+    }
+
+    #[test]
+    fn test_format_primorial_report() {
+        let report = format_primorial_report();
+        assert!(report.contains("Notation"));
+        assert!(report.contains("3#"));
+        assert!(report.contains("30030"));
+        assert!(report.contains("2 · 3 · 5 · 7 · 11 · 13"));
     }
 }
