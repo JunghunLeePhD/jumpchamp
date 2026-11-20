@@ -20,6 +20,8 @@ Built with a functional programming architecture, cache-aligned multi-threading 
 * **Non-blocking Background Worker & Instant Reset**: Background worker threads communicate over `crossbeam-channel` with epoch-synchronized `CancelToken` polling at sieve segment, engine scan, and mmap query boundaries, keeping the UI locked at 60 FPS and allowing instant cancellation mid-computation.
 
 * **Advanced Mathematical Analytics**:
+  * **Top-5 Gap Ranking Board**: Floating HUD ranking the top 5 most frequent gaps (`#1`–`#5`) with live counts, percentages, and interactive bar focus lock.
+  * **Prime Factorization & Primorial ($p_n\#$) Alignment**: Computes exact prime factorizations ($\Delta = \prod p_i^{a_i}$), detects primorial multiples ($2\# = 2, 3\# = 6, 5\# = 30, 7\# = 210, 11\# = 2310, 13\# = 30030$), and displays a compact primorial reference list.
   * **Record Gap Tracking**: Computes maximal record-breaking prime gaps $\Delta(n)$ and Cramér Ratios $C(n) = \frac{\Delta(n)}{(\ln p_n)^2}$.
   * **Residue Class Analysis**: Analyzes prime gap modulo alignments ($g \pmod 6$, $g \pmod{30}$).
   * **Markov Gap Transitions**: Analyzes 2-step gap transition probabilities $(g_n \to g_{n+1})$.
@@ -43,7 +45,7 @@ jumpchamp/
 │   │       │   ├── generate_gaps.rs    # Offline prime sieve -> raw u16 gaps.bin CLI
 │   │       │   └── generate_index.rs   # Offline gaps.bin -> block_index.bin CLI
 │   │       ├── sieve/           # wheel.rs, parallel.rs, stream.rs (bitpacked wheel-of-30)
-│   │       ├── analysis/        # gaps.rs, report.rs (k-step combinators, Cramér ratios)
+│   │       ├── analysis/        # gaps.rs, primorial.rs, report.rs (k-step combinators, factorizations, Cramér ratios)
 │   │       ├── engine/          # histogram.rs, scan.rs, range.rs, frames.rs
 │   │       └── storage/         # format.rs, raw.rs, engine.rs, builder.rs, spectral.rs
 │   └── gui/                     # jumpchamp-gui: Native eframe/egui desktop application
@@ -71,7 +73,7 @@ Each domain layer is independently readable and testable:
 |---|---|---|---|
 | `cancel` | `CancelToken` | Lock-free atomic cooperative cancellation token | none |
 | `sieve/` | `wheel`, `parallel`, `stream` | Bitpacked wheel-of-30 prime generation & bounds | `rayon` |
-| `analysis/` | `gaps`, `report` | Pure gap combinators, Cramér ratios & text reports | none |
+| `analysis/` | `gaps`, `primorial`, `report` | Pure gap combinators, prime factorization, primorials ($p_n\#$), Cramér ratios & text reports | none |
 | `engine/` | `histogram`, `scan`, `range`, `frames` | Gap histograms, chunk caching & animation frames | `sieve`, `analysis` |
 | `storage/` | `format`, `raw`, `engine`, `builder`, `spectral` | Zero-copy mmap `gaps.bin` / `block_index.bin`, `DistributionEngine`, spectral matrix | `memmap2`, `bytemuck`, `rayon` |
 | `gui/` | `state`, `worker`, `actions`, `panels`, `widgets` | Native desktop interface, `BarChart`, & 2D `ColorImage` spectral heatmap | `egui`, `eframe`, `egui_plot`, `crossbeam-channel` |
@@ -146,6 +148,7 @@ brew install --cask JunghunLeePhD/tap/jumpchamp
 ## 🖥️ Key GUI Capabilities
 
 - **Toolbar & View Modes**: Switch seamlessly between **📊 Bars** (`egui_plot::BarChart`), **🌈 Heatmap** (2D `egui::ColorImage` spectral density across prime-index scales), and **⊞ Split** view with synchronized gap focus lock.
+- **Top-5 Ranking Board & Primorial HUD**: Top-left floating leaderboard (toggleable in Settings, with cursor hover tooltip box off by default) showing Rank #1–#5 gaps, prime factorizations, primorial tags ($p_n\#$), and a compact primorial reference table.
 - **37.6B Prime Range Navigation**: Dual-thumb range sliders and compact index inputs supporting scales from `10M` up to `37.6B` ($\pi(10^{12})$) and `100B`.
 - **Two-Tier Mmap + Sieve Engine**: Instant microsecond queries via `block_index.bin`, dynamic sliding-window $k$-step gaps via `gaps.bin`, and automatic fallback to the L1-cache parallel segmented sieve when no files are mounted.
 - **Non-blocking Execution & Instant Reset**: Background worker channels, `CancelToken` polling across sieve/engine/mmap loops, and an always-enabled Reset button abort heavy runs mid-computation without UI freezes.
