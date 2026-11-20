@@ -37,20 +37,32 @@ impl FrameSet {
             return None;
         }
 
+        Some(Self::from_deltas(min, max, k, &deltas))
+    }
+
+    /// Constructs a cumulative [`FrameSet`] from per-frame delta histograms.
+    pub fn from_deltas(min: u64, max: u64, k: usize, deltas: &[Histogram]) -> Self {
+        let count = deltas.len().max(1);
+        let step = frame_step(min, max, count);
         let width = deltas
             .iter()
             .map(|h| histogram::trimmed_len(h))
             .max()
             .unwrap_or(0)
             .max(1);
-        let frames = histogram::running_totals(&deltas, width);
-        Some(Self {
+        let frames = histogram::running_totals(deltas, width);
+        Self {
             min,
             max,
             k,
             step,
             frames,
-        })
+        }
+    }
+
+    /// Returns the cumulative histogram slices for all precomputed frames.
+    pub fn frame_slices(&self) -> &[Histogram] {
+        &self.frames
     }
 
     /// Whether these frames were built for this exact query.

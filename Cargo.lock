@@ -1636,6 +1636,8 @@ dependencies = [
 name = "jumpchamp-core"
 version = "1.0.1"
 dependencies = [
+ "bytemuck",
+ "memmap2",
  "rayon",
  "serde",
 ]
