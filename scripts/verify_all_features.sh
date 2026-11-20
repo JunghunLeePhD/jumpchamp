@@ -109,6 +109,13 @@ else
     fail_step "Binary check: jumpchamp_gui" "Check failed"
 fi
 
+echo "Compiling zero-copy storage CLIs (generate_gaps, generate_index)..."
+if cargo build --release -p jumpchamp-core --bin generate_gaps --bin generate_index; then
+    pass_step "Binary compilation: generate_gaps & generate_index"
+else
+    fail_step "Binary compilation: generate_gaps & generate_index" "Compilation failed"
+fi
+
 
 print_header "Phase 6: Application Bundle & Icon Packaging Verification"
 

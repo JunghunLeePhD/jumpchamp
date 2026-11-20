@@ -8,18 +8,23 @@ Built with a functional programming architecture, cache-aligned multi-threading 
 
 ## 🌟 Key Features
 
-* **Native Desktop GUI (`egui` + `eframe`)**: Cross-platform desktop interface featuring non-blocking in-memory computation, GPU-accelerated plots (`egui_plot`), virtualized table inspection (`egui_extras`), and real-time LTTB data downsampling for smooth 60+ FPS rendering of datasets with millions of primes.
+* **Native Desktop GUI (`egui` + `eframe`)**: Cross-platform desktop interface featuring non-blocking computation, GPU-accelerated bar plots (`egui_plot`), and a dynamic 2D `egui::ColorImage` spectral distribution heatmap across prime-index scales.
 
-* **Parallel Bitpacked Segmented Sieve**: Utilizes Rayon to process 64-bit bitmasked odd-only segments in parallel, fitting 262,144 candidates into CPU L1-cache for an **8x-16x memory footprint reduction**.
+* **Zero-Copy Binary Storage & Two-Tier Indexing (`memmap2` + `bytemuck`)**:
+  * **Instant Startup (<1 ms)**: Memory-maps pre-aggregated 2.4 KB `BlockHistogram` tables (`block_index.bin`, ~9 MB up to $10^{12}$) with zero parsing or decompression.
+  * **Sub-Millisecond Range Queries**: `DistributionEngine::query_distribution` sums spanning block histograms ($L = 10^7$) in microseconds across ranges up to $37.6 \times 10^9$ primes ($\pi(10^{12})$).
+  * **On-the-Fly $k$-Step Gaps**: Memory-maps raw `u16` 1-step gaps (`gaps.bin`, ~75 GB at $10^{12}$) and evaluates higher-order $k$-step gaps dynamically via sliding-window sums over active viewports without storing duplicate databases.
 
-* **Non-blocking Background Worker**: Sieve calculations and gap frequency computations execute on dedicated worker threads, ensuring continuous 60 FPS UI responsiveness with live progress reporting.
+* **Parallel Bitpacked Segmented Sieve Fallback**: Uses Rayon over 64-bit wheel-of-30 segments fitting 262,144 candidates in L1 cache for live out-of-the-box exploration without pre-generated binary files.
+
+* **Non-blocking Background Worker**: Background worker threads communicate over `crossbeam-channel` with epoch-based cooperative cancellation, keeping the UI locked at 60 FPS.
 
 * **Advanced Mathematical Analytics**:
   * **Record Gap Tracking**: Computes maximal record-breaking prime gaps $\Delta(n)$ and Cramér Ratios $C(n) = \frac{\Delta(n)}{(\ln p_n)^2}$.
   * **Residue Class Analysis**: Analyzes prime gap modulo alignments ($g \pmod 6$, $g \pmod{30}$).
   * **Markov Gap Transitions**: Analyzes 2-step gap transition probabilities $(g_n \to g_{n+1})$.
 
-* **Comprehensive Test Suite**: Pure functional architecture with unit tests for algorithms, iterator combinators, LTTB downsampling, and UI state management (`cargo test`).
+* **Comprehensive Test Suite**: Pure functional architecture with unit and CLI integration tests across core storage, sieve algorithms, analytics, and GUI state (`cargo test --workspace --all-targets`).
 
 ---
 
@@ -29,40 +34,34 @@ Built with a functional programming architecture, cache-aligned multi-threading 
 jumpchamp/
 ├── .devcontainer/
 │   └── devcontainer.json        # VS Code Dev Container settings
-├── src/
-│   ├── lib.rs                   # Library root — declares all domain layers
-│   ├── main.rs                  # Primary GUI application entry point
-│   ├── sieve/
-│   │   ├── mod.rs               # Re-exports wheel, parallel, stream
-│   │   ├── wheel.rs             # small_primes, sieve_segment (bitpacked wheel-of-30 sieve)
-│   │   ├── parallel.rs          # sieve_range_parallel (Rayon L1-cache bitmask dispatcher)
-│   │   └── stream.rs            # prime_blocks_up_to, stream_prime_blocks_range, nth_prime_upper_bound
-│   ├── analysis/
-│   │   ├── mod.rs               # Re-exports gaps, report
-│   │   ├── gaps.rs              # apply_interval, k_step_gaps, record_gaps, count_residues
-│   │   └── report.rs            # format_report, format_record_gaps_report, format_residue_report
-│   ├── engine/
-│   │   ├── mod.rs               # Pure GUI-free computation engine root
-│   │   ├── histogram.rs         # Pure histogram operations and top_gaps sorting
-│   │   ├── scan.rs              # Unified prime walk with progress and cancellation
-│   │   ├── range.rs             # Range histogram queries and ChunkCache
-│   │   └── frames.rs            # FrameSet precomputation for animations
-│   ├── gui/
-│   │   ├── mod.rs               # GUI domain root
-│   │   ├── actions.rs           # Pure action dispatcher and event loop
-│   │   ├── app.rs               # eframe::App window shell & update loop
-│   │   ├── format.rs            # Formatting utilities (compact, thousands)
-│   │   ├── playback.rs          # Pure playback state machine
-│   │   ├── prefs.rs             # User preferences (theme, limits, toggles)
-│   │   ├── state.rs             # AppState, Query, Rank
-│   │   ├── theme.rs             # Unified Palette definition & Viridis colormap
-│   │   ├── worker.rs            # Non-blocking background worker with epoch-based cancellation
-│   │   ├── widgets/             # Reusable UI widgets (dual-thumb range slider, index input)
-│   │   └── panels/              # Composable UI panels (chart, playback_bar, settings, status_bar, toolbar)
-│   └── bin/
-│       └── jumpchamp_gui.rs     # Native desktop GUI entry point binary
-├── .gitignore                   # Ignores /target build artifacts
-└── Cargo.toml                   # Dependencies (Rayon, egui, eframe, crossbeam-channel)
+├── crates/
+│   ├── core/                    # jumpchamp-core: Headless engine & zero-copy storage
+│   │   └── src/
+│   │       ├── lib.rs           # Crate root — declares all core domain layers
+│   │       ├── bin/
+│   │       │   ├── generate_gaps.rs    # Offline prime sieve -> raw u16 gaps.bin CLI
+│   │       │   └── generate_index.rs   # Offline gaps.bin -> block_index.bin CLI
+│   │       ├── sieve/           # wheel.rs, parallel.rs, stream.rs (bitpacked wheel-of-30)
+│   │       ├── analysis/        # gaps.rs, report.rs (k-step combinators, Cramér ratios)
+│   │       ├── engine/          # histogram.rs, scan.rs, range.rs, frames.rs
+│   │       └── storage/         # format.rs, raw.rs, engine.rs, builder.rs, spectral.rs
+│   └── gui/                     # jumpchamp-gui: Native eframe/egui desktop application
+│       └── src/
+│           ├── main.rs          # Primary GUI entry point
+│           ├── bin/jumpchamp_gui.rs # macOS bundle binary entry point
+│           ├── actions.rs       # User action dispatcher and event loop
+│           ├── app.rs           # eframe::App window shell, texture upload & update loop
+│           ├── format.rs        # Formatting utilities (compact, thousands)
+│           ├── playback.rs      # Pure animation state machine
+│           ├── prefs.rs         # User preferences (theme, chart view, paths, limits)
+│           ├── state.rs         # AppState, Query, Rank, DatasetMeta
+│           ├── theme.rs         # Unified Palette definition & Viridis colormap
+│           ├── worker.rs        # Background worker with epoch cancellation & mmap queries
+│           ├── widgets/         # Reusable UI widgets (dual-thumb range slider, index input)
+│           └── panels/          # Composable UI panels (chart, heatmap, playback_bar, settings, status_bar, toolbar)
+├── scripts/
+│   └── verify_all_features.sh   # Full fmt, clippy, test, and binary verification
+└── Cargo.toml                   # Workspace root (crates/core, crates/gui)
 ```
 
 Each domain layer is independently readable and testable:
@@ -72,7 +71,8 @@ Each domain layer is independently readable and testable:
 | `sieve/` | `wheel`, `parallel`, `stream` | Bitpacked wheel-of-30 prime generation & bounds | `rayon` |
 | `analysis/` | `gaps`, `report` | Pure gap combinators, Cramér ratios & text reports | none |
 | `engine/` | `histogram`, `scan`, `range`, `frames` | Gap histograms, chunk caching & animation frames | `sieve`, `analysis` |
-| `gui/` | `state`, `worker`, `actions`, `panels`, `widgets` | Native desktop interface & virtualized rendering | `egui`, `eframe`, `egui_plot`, `crossbeam-channel` |
+| `storage/` | `format`, `raw`, `engine`, `builder`, `spectral` | Zero-copy mmap `gaps.bin` / `block_index.bin`, `DistributionEngine`, spectral matrix | `memmap2`, `bytemuck`, `rayon` |
+| `gui/` | `state`, `worker`, `actions`, `panels`, `widgets` | Native desktop interface, `BarChart`, & 2D `ColorImage` spectral heatmap | `egui`, `eframe`, `egui_plot`, `crossbeam-channel` |
 
 ---
 
@@ -89,13 +89,46 @@ Launch the native desktop GUI application with a single command:
 cargo run --release
 ```
 
-Or specifically via the binary target:
+Or launch with pre-generated zero-copy binary files:
 
 ```bash
-cargo run --release --bin jumpchamp_gui
+cargo run --release --bin jumpchamp -- --index block_index.bin --gaps gaps.bin
 ```
 
-### 2. macOS Installation via Homebrew
+If `block_index.bin` (and optionally `gaps.bin`) exist in the working directory, JumpChamp auto-mounts them on startup in <1 ms; you can also mount or switch files anytime in **⚙ Settings -> Zero-Copy Binary Storage (Mmap)**.
+
+### 2. Offline Zero-Copy Dataset & Block Index Generation
+
+Build raw `u16` gaps (`gaps.bin`) and the two-tier `BlockHistogram` index (`block_index.bin`):
+
+```bash
+# 1. Sieve primes up to a prime bound and stream u16 1-step gaps to gaps.bin
+cargo run --release -p jumpchamp-core --bin generate_gaps -- 100_000_000 gaps.bin
+
+# 2. Scan gaps.bin in parallel and build block_index.bin (2.4 KB per 10M-prime block)
+cargo run --release -p jumpchamp-core --bin generate_index -- gaps.bin block_index.bin
+```
+
+#### Engine Rust API (`DistributionEngine`)
+
+```rust
+use jumpchamp_core::storage::{DistributionEngine, RawGaps};
+
+let engine = DistributionEngine::load("block_index.bin")?;
+let dist: [u64; 600] = engine.query_distribution(0, 99_999_999);
+
+let raw = RawGaps::open("gaps.bin")?;
+let k3_hist = raw.k_step_histogram(0, 1_000_000, 3);
+```
+
+#### Data Footprint Summary ($10^{12}$ / ~37.6B Primes)
+
+| Data Component | File Name | Size on Disk | Access Method |
+| :--- | :--- | :--- | :--- |
+| **Raw Gaps** | `gaps.bin` | ~75 GB (`u16`) | Zero-copy `memmap2` slice casting via `bytemuck` |
+| **Block Index** | `block_index.bin` | ~9 MB ($3,761 \times 2.4\text{ KB}$) | Memory-mapped array of `BlockHistogram` structs |
+
+### 3. macOS Installation via Homebrew
 
 Install the standalone macOS desktop app:
 
@@ -110,10 +143,10 @@ brew install --cask JunghunLeePhD/tap/jumpchamp
 
 ## 🖥️ Key GUI Capabilities
 
-- **3-Panel Workflow**: Sidebar controls for $k$-step gap size and prime search range $[n, m]$, interactive `egui_plot` visualizer, and virtualized histogram bars.
-- **In-Memory Sieve Engine**: Computes primes on the fly using L1-cache aligned segmented sieve without requiring pre-computed database files on disk.
-- **LTTB Downsampling**: Dynamically reduces dense data series down to ~2,000 display points for real-time panning/zooming at 60+ FPS.
-- **Non-blocking Execution**: Background worker channel prevents UI freezes while generating and analyzing prime ranges.
+- **Toolbar & View Modes**: Switch seamlessly between **📊 Bars** (`egui_plot::BarChart`), **🌈 Heatmap** (2D `egui::ColorImage` spectral density across prime-index scales), and **⊞ Split** view with synchronized gap focus lock.
+- **37.6B Prime Range Navigation**: Dual-thumb range sliders and compact index inputs supporting scales from `10M` up to `37.6B` ($\pi(10^{12})$) and `100B`.
+- **Two-Tier Mmap + Sieve Engine**: Instant microsecond queries via `block_index.bin`, dynamic sliding-window $k$-step gaps via `gaps.bin`, and automatic fallback to the L1-cache parallel segmented sieve when no files are mounted.
+- **Non-blocking Execution**: Background worker channels and epoch cancellation prevent UI freezes during panning, range scrubbing, or animation precaching.
 
 ---
 
