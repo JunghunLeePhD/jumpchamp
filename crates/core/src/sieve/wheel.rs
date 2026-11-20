@@ -3,8 +3,11 @@
 //! Every block of 30 integers is stored as 8 bits — one per residue coprime to 30
 //! (1, 7, 11, 13, 17, 19, 23, 29). Multiples of 2, 3 and 5 are never stored.
 
+use crate::cancel::CancelToken;
+
 const OFFSETS: [usize; 8] = [1, 7, 11, 13, 17, 19, 23, 29];
 const NO_BIT: u8 = 255;
+const PRIME_POLL_STRIDE: usize = 64;
 const INDEX: [u8; 30] = [
     255, 0, 255, 255, 255, 255, 255, 1, 255, 255, 255, 2, 255, 3, 255, 255, 255, 4, 255, 5, 255,
     255, 255, 6, 255, 255, 255, 255, 255, 7,
@@ -47,19 +50,27 @@ fn first_odd_multiple(p: usize, from: usize) -> usize {
     }
 }
 
-/// Sieves `[low, high]` using `base_primes` (all primes up to `√high`).
-///
-/// Returns the primes in the segment in ascending order.
-pub fn sieve_segment(low: usize, high: usize, base_primes: &[usize]) -> Vec<u64> {
+fn sieve_segment_inner(
+    low: usize,
+    high: usize,
+    base_primes: &[usize],
+    cancel: Option<&CancelToken>,
+) -> Option<Vec<u64>> {
+    if cancel.is_some_and(CancelToken::is_cancelled) {
+        return None;
+    }
     if low > high {
-        return vec![];
+        return Some(vec![]);
     }
 
     let base = (low / 30) * 30;
     let blocks = (high.div_ceil(30) * 30 - base) / 30 + 1;
     let mut bits = vec![!0u64; (blocks * 8).div_ceil(64)];
 
-    for &p in base_primes.iter().filter(|&&p| p > 5) {
+    for (idx, &p) in base_primes.iter().filter(|&&p| p > 5).enumerate() {
+        if idx.is_multiple_of(PRIME_POLL_STRIDE) && cancel.is_some_and(CancelToken::is_cancelled) {
+            return None;
+        }
         for m in (first_odd_multiple(p, base)..=high).step_by(2 * p) {
             if let Some(bit) = bit_of(m, base) {
                 bits[bit / 64] &= !(1u64 << (bit % 64));
@@ -67,12 +78,33 @@ pub fn sieve_segment(low: usize, high: usize, base_primes: &[usize]) -> Vec<u64>
         }
     }
 
+    if cancel.is_some_and(CancelToken::is_cancelled) {
+        return None;
+    }
+
     let wheel_primes = [2, 3, 5].into_iter().filter(|p| (low..=high).contains(p));
     let sieved = set_bits(&bits)
         .map(|bit| value_of(bit, base))
         .filter(|&n| n > 1 && (low..=high).contains(&n));
 
-    wheel_primes.chain(sieved).map(|p| p as u64).collect()
+    Some(wheel_primes.chain(sieved).map(|p| p as u64).collect())
+}
+
+/// Sieves `[low, high]` using `base_primes` (all primes up to `√high`).
+///
+/// Returns the primes in the segment in ascending order.
+pub fn sieve_segment(low: usize, high: usize, base_primes: &[usize]) -> Vec<u64> {
+    sieve_segment_inner(low, high, base_primes, None).unwrap_or_default()
+}
+
+/// Cancellable variant of [`sieve_segment`]; returns `None` if `cancel` is triggered.
+pub fn sieve_segment_cancellable(
+    low: usize,
+    high: usize,
+    base_primes: &[usize],
+    cancel: &CancelToken,
+) -> Option<Vec<u64>> {
+    sieve_segment_inner(low, high, base_primes, Some(cancel))
 }
 
 /// All primes in `[2, limit]`, ascending.
@@ -85,6 +117,23 @@ pub fn small_primes(limit: usize) -> Vec<usize> {
         .into_iter()
         .map(|p| p as usize)
         .collect()
+}
+
+/// Cancellable variant of [`small_primes`]; returns `None` if `cancel` is triggered.
+pub fn small_primes_cancellable(limit: usize, cancel: &CancelToken) -> Option<Vec<usize>> {
+    if cancel.is_cancelled() {
+        return None;
+    }
+    if limit < 2 {
+        return Some(vec![]);
+    }
+    let base = small_primes_cancellable(isqrt(limit), cancel)?;
+    let primes = if limit > super::parallel::SEGMENT_SPAN {
+        super::parallel::sieve_range_parallel_cancellable(1, limit, &base, cancel)?
+    } else {
+        sieve_segment_cancellable(1, limit, &base, cancel)?
+    };
+    Some(primes.into_iter().map(|p| p as usize).collect())
 }
 
 #[cfg(test)]
@@ -149,5 +198,37 @@ mod tests {
         assert_eq!(window_primes.first(), Some(&101));
         assert_eq!(window_primes.last(), Some(&199));
         assert_eq!(window_primes.len(), 21); // 21 primes in [100, 200]
+    }
+
+    #[test]
+    fn test_sieve_segment_cancellable_matches_and_aborts() {
+        let base_primes = small_primes(100);
+        let cancel = CancelToken::new();
+        assert_eq!(
+            sieve_segment_cancellable(100, 200, &base_primes, &cancel),
+            Some(sieve_segment(100, 200, &base_primes))
+        );
+
+        cancel.cancel();
+        assert_eq!(
+            sieve_segment_cancellable(100, 200, &base_primes, &cancel),
+            None
+        );
+    }
+
+    #[test]
+    fn test_small_primes_cancellable_matches_and_aborts() {
+        let cancel = CancelToken::new();
+        assert_eq!(
+            small_primes_cancellable(10_000, &cancel),
+            Some(small_primes(10_000))
+        );
+        assert_eq!(
+            small_primes_cancellable(300_000, &cancel),
+            Some(small_primes(300_000))
+        );
+
+        cancel.cancel();
+        assert_eq!(small_primes_cancellable(300_000, &cancel), None);
     }
 }
