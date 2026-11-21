@@ -62,7 +62,7 @@ Homebrew will automatically:
 5. Extract and place `JumpChamp.app` into `/Applications`.
 
 ### ✨ Automatic Gatekeeper Handling:
-The Cask includes an automated `postflight` hook that runs `xattr -cr /Applications/JumpChamp.app` immediately after extraction. Your friend can launch `JumpChamp` directly from `/Applications` or Spotlight without entering any security bypass commands!
+The Cask includes an automated `postflight_steps` block that runs `xattr -cr /Applications/JumpChamp.app` immediately after extraction. Your friend can launch `JumpChamp` directly from `/Applications` or Spotlight without entering any security bypass commands!
 
 ---
 

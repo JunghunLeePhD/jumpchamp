@@ -141,7 +141,7 @@ brew install --cask JunghunLeePhD/tap/jumpchamp
 ```
 
 > [!TIP]
-> The Homebrew Cask includes an automated `postflight` hook that removes macOS quarantine flags upon installation, allowing JumpChamp to launch immediately without requiring manual security bypass commands.
+> The Homebrew Cask includes an automated `postflight_steps` block that removes macOS quarantine flags upon installation, allowing JumpChamp to launch immediately without requiring manual security bypass commands.
 
 ---
 
