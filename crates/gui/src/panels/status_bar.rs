@@ -25,7 +25,16 @@ pub fn render(ui: &mut Ui, state: &AppState) {
         if let Some(fraction) = fraction {
             ui.add_sized([90.0, 16.0], ProgressBar::new(fraction).show_percentage());
         }
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(version_label())
+                .on_hover_text("Build version synchronized with git tag");
+        });
     });
+}
+
+pub fn version_label() -> String {
+    format!("🏷 {}", crate::APP_VERSION)
 }
 
 pub fn engine_label(state: &AppState) -> String {
@@ -129,5 +138,11 @@ mod tests {
             "⚡ Engine: Mmap Index (3761 blocks + Raw Gaps)"
         );
         assert_eq!(format_latency(&state), "125 µs (sampled)");
+    }
+
+    #[test]
+    fn test_version_label_includes_app_version() {
+        assert!(!crate::APP_VERSION.is_empty());
+        assert_eq!(version_label(), format!("🏷 {}", crate::APP_VERSION));
     }
 }

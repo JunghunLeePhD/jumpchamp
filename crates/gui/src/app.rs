@@ -157,7 +157,10 @@ impl App for JumpChampApp {
 
 pub fn run() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("JumpChamp — Prime Gap Explorer 🦀")
+        .with_title(format!(
+            "JumpChamp {} — Prime Gap Explorer 🦀",
+            crate::APP_VERSION
+        ))
         .with_inner_size([1400.0, 900.0])
         .with_min_inner_size([900.0, 600.0]);
 

@@ -22,7 +22,7 @@ const LIMIT_PRESETS: [(&str, u64); 6] = [
 pub fn render(ctx: &Context, state: &mut AppState, palette: &Palette) -> Option<Action> {
     let mut open = state.prefs.show_settings;
     let mut action = None;
-    egui::Window::new("⚙ JumpChamp Settings")
+    egui::Window::new(format!("⚙ JumpChamp Settings ({})", crate::APP_VERSION))
         .open(&mut open)
         .resizable(false)
         .collapsible(false)
