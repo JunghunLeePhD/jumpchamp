@@ -82,9 +82,9 @@ cask "jumpchamp" do
 
   app "JumpChamp.app"
 
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-cr", "#{appdir}/JumpChamp.app"]
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args: ["-cr", "{{appdir}}/JumpChamp.app"]
   end
 
   zap trash: [
